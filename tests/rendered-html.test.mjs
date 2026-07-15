@@ -25,5 +25,11 @@ test("banana merchant source replaces the starter preview", async () => {
   assert.match(worker, /Submit cutting weights/);
   assert.match(worker, /cutter_batches/);
   assert.match(worker, /Print invoice/);
+  assert.match(worker, /data:image\/png;base64/);
+  assert.match(worker, /invoiceHtml\(env\.DB, url\.pathname\.split\("\/"\)\.pop\(\), env\)/);
+  assert.match(worker, /sale_date AS item_date, banana_type, weight_kg, rate, paid, vehicle_no, notes/);
+  assert.match(worker, /purchase_date AS item_date, banana_type, weight_kg, rate, bunches, vehicle_no, notes/);
+  assert.match(worker, /Vehicle \$\{row\.vehicle_no\}/);
+  assert.match(worker, /Units \$\{row\.bunches\}/);
   assert.doesNotMatch(worker, /class="hero"/);
 });

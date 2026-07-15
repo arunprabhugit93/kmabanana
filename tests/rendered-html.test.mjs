@@ -3,10 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("banana merchant source replaces the starter preview", async () => {
-  const [page, layout, packageJson] = await Promise.all([
+  const [page, layout, packageJson, worker] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /Banana trade control desk/);
@@ -17,4 +18,9 @@ test("banana merchant source replaces the starter preview", async () => {
   assert.match(layout, /Banana Merchant Desk/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|react-loading-skeleton/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+  assert.match(worker, /KMA Banana/);
+  assert.match(worker, /class="appframe"/);
+  assert.match(worker, /Workflow health/);
+  assert.match(worker, /Print invoice/);
+  assert.doesNotMatch(worker, /class="hero"/);
 });

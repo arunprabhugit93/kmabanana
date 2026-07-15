@@ -24,28 +24,39 @@ const APP_HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Banana Merchant Desk</title>
   <style>
-    :root{--bg:#f7f6f1;--ink:#1f2a24;--muted:#647069;--panel:#fff;--soft:#edf4e7;--line:#d8dfcf;--brand:#3f7c4c;--dark:#255a35;--accent:#d6a231;--bad:#a84436}
-    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,rgba(63,124,76,.1),transparent 300px),var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif}button,input,select,textarea{font:inherit}button,.btn{align-items:center;background:var(--brand);border:0;border-radius:6px;color:#fff;cursor:pointer;display:inline-flex;font-weight:700;justify-content:center;min-height:40px;padding:9px 13px;text-decoration:none}button:hover,.btn:hover{background:var(--dark)}button.secondary,.btn.secondary{background:#e8eddf;color:var(--ink)}button.secondary:hover,.btn.secondary:hover{background:#dce5d3}input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:10px 11px;width:100%}textarea{min-height:160px;resize:vertical}h1,h2,h3,p{margin:0}.shell{margin:0 auto;max-width:1500px;padding:22px}.hero{align-items:end;background:linear-gradient(115deg,rgba(31,42,36,.96),rgba(37,90,53,.92));color:#fff;display:grid;gap:24px;grid-template-columns:minmax(0,1fr) 340px;padding:38px}.hero h1{font-size:clamp(2rem,4vw,4.3rem);line-height:1}.copy{color:rgba(255,255,255,.82);font-size:1.05rem;line-height:1.55;margin-top:16px;max-width:760px}.eyebrow{color:var(--accent);font-size:.74rem;font-weight:800;text-transform:uppercase}.datebox{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:8px;display:grid;gap:10px;padding:17px}.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.tabs button{background:#e8eddf;color:var(--ink)}.tabs button.active{background:var(--brand);color:#fff}.metrics{display:grid;gap:12px;grid-template-columns:repeat(5,minmax(0,1fr));margin:16px 0}.metric{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--brand);border-radius:8px;display:grid;gap:7px;min-height:100px;padding:15px}.metric span{color:var(--muted);font-size:.78rem;font-weight:800;text-transform:uppercase}.metric strong{font-size:clamp(1.2rem,2vw,1.8rem)}.view{display:none}.view.active{display:block}.grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px}.wide{grid-column:1/-1}.heading{align-items:end;display:flex;gap:12px;justify-content:space-between;margin-bottom:14px}.heading h2{font-size:1.25rem;margin-top:3px}.formgrid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}.formgrid button{align-self:end}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.four{grid-template-columns:repeat(4,minmax(0,1fr))}.actions{display:flex;flex-wrap:wrap;gap:9px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%}th,td{border-top:1px solid var(--line);font-size:.88rem;padding:9px 8px;text-align:left;white-space:nowrap}th{background:#f3f6ee;color:var(--muted);font-size:.74rem;text-transform:uppercase}td:first-child{font-weight:700}.rates{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr))}.rate{background:var(--soft);border:1px solid var(--line);border-radius:8px;display:grid;gap:8px;min-height:118px;padding:14px}.rate strong{font-size:1.4rem}.notice{background:#fff7df;border:1px solid #ead394;border-radius:8px;color:#654d10;padding:12px}.printHint{color:var(--muted);font-size:.85rem}.status{color:var(--muted);font-size:.9rem;min-height:22px}.danger{color:var(--bad)}@media(max-width:1050px){.hero,.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.rates,.formgrid,.four{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.shell{padding:12px}.hero{padding:24px 18px}.metrics,.rates,.formgrid,.two,.four{grid-template-columns:1fr}.heading{align-items:start;flex-direction:column}}
+    :root{--bg:#f4f6f3;--ink:#17211b;--muted:#66736a;--panel:#fff;--panel2:#f9fbf7;--line:#dce3d8;--line2:#eef2eb;--brand:#2f6b43;--brand2:#184c2c;--accent:#c9972d;--blue:#315f90;--bad:#b3463c;--ok:#2f7d4c;--shadow:0 16px 40px rgba(23,33,27,.08)}
+    *{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Arial,Helvetica,sans-serif;font-size:14px}button,input,select,textarea{font:inherit}button,.btn{align-items:center;background:var(--brand);border:1px solid transparent;border-radius:7px;color:#fff;cursor:pointer;display:inline-flex;font-weight:760;gap:7px;justify-content:center;min-height:38px;padding:9px 13px;text-decoration:none;transition:background .15s,border-color .15s,box-shadow .15s}button:hover,.btn:hover{background:var(--brand2);box-shadow:0 8px 18px rgba(47,107,67,.18)}button.secondary,.btn.secondary{background:#fff;border-color:var(--line);color:var(--ink)}button.secondary:hover,.btn.secondary:hover{background:#f1f5ee;box-shadow:none}input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:7px;color:var(--ink);outline:none;padding:10px 11px;width:100%}input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(47,107,67,.12)}textarea{min-height:142px;resize:vertical}h1,h2,h3,p{margin:0}.appframe{display:grid;grid-template-columns:264px minmax(0,1fr);min-height:100vh}.sidebar{background:#15291d;color:#dceade;display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh}.brand{align-items:center;display:flex;gap:11px;margin-bottom:24px}.mark{align-items:center;background:#d9ad3a;border-radius:8px;color:#17211b;display:flex;font-weight:900;height:38px;justify-content:center;width:38px}.brand strong{display:block;font-size:1.02rem}.brand span{color:#9eb4a4;font-size:.78rem}.tabs{display:grid;gap:6px}.tabs button{background:transparent;border:1px solid transparent;color:#c7d8cc;justify-content:flex-start;padding:10px 12px}.tabs button:hover{background:rgba(255,255,255,.08);box-shadow:none}.tabs button.active{background:#e7f2e9;color:#183823}.sidefoot{border-top:1px solid rgba(255,255,255,.12);color:#98afa0;font-size:.78rem;line-height:1.45;margin-top:auto;padding-top:16px}.shell{max-width:1600px;padding:24px 28px 40px}.topbar{align-items:center;display:grid;gap:18px;grid-template-columns:minmax(0,1fr) 450px;margin-bottom:18px}.titleblock h1{font-size:clamp(1.8rem,3vw,3.1rem);letter-spacing:0;line-height:1.02}.copy{color:var(--muted);font-size:1rem;line-height:1.55;margin-top:10px;max-width:850px}.eyebrow{color:var(--accent);font-size:.72rem;font-weight:850;letter-spacing:0;text-transform:uppercase}.datebox{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:grid;gap:10px;grid-template-columns:1fr 1fr auto;padding:14px}.datebox label{color:var(--muted);font-size:.74rem;font-weight:800;text-transform:uppercase}.datefield{display:grid;gap:5px}.metrics{display:grid;gap:12px;grid-template-columns:repeat(5,minmax(0,1fr));margin:16px 0}.metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 22px rgba(23,33,27,.05);display:grid;gap:9px;min-height:104px;padding:16px;position:relative}.metric:before{background:var(--brand);border-radius:10px 0 0 10px;content:"";inset:0 auto 0 0;position:absolute;width:4px}.metric span{color:var(--muted);font-size:.75rem;font-weight:850;text-transform:uppercase}.metric strong{font-size:clamp(1.25rem,2vw,1.85rem);letter-spacing:0}.view{display:none}.view.active{display:block}.grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:1.1fr 1fr 1fr}.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(23,33,27,.05);padding:18px}.wide{grid-column:1/-1}.heading{align-items:end;display:flex;gap:12px;justify-content:space-between;margin-bottom:14px}.heading h2{font-size:1.2rem;line-height:1.2;margin-top:3px}.subcopy{color:var(--muted);font-size:.86rem;line-height:1.45;margin-top:5px}.formgrid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}.formgrid button{align-self:end}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.four{grid-template-columns:repeat(4,minmax(0,1fr))}.actions{display:flex;flex-wrap:wrap;gap:9px}.tablewrap{border:1px solid var(--line);border-radius:9px;overflow:auto}table{border-collapse:separate;border-spacing:0;width:100%}th,td{border-bottom:1px solid var(--line2);font-size:.86rem;padding:10px 11px;text-align:left;white-space:nowrap}tr:last-child td{border-bottom:0}th{background:#f6f8f4;color:var(--muted);font-size:.72rem;font-weight:850;position:sticky;text-transform:uppercase;top:0}td:first-child{color:var(--ink);font-weight:780}.num{text-align:right}.pill{background:#eef5ee;border:1px solid #d7e6d8;border-radius:999px;color:var(--brand2);display:inline-flex;font-size:.76rem;font-weight:820;padding:4px 8px}.pill.warn{background:#fff5dc;border-color:#ecd28c;color:#6b4d0d}.pill.bad{background:#fff0ee;border-color:#edc4bf;color:var(--bad)}.rates{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.rate{background:linear-gradient(180deg,#fbfcf9,#eef5ee);border:1px solid var(--line);border-radius:10px;display:grid;gap:9px;min-height:132px;padding:15px}.rate strong{font-size:1.55rem}.rate span,.rate small{color:var(--muted)}.notice{background:#fff8e8;border:1px solid #ead394;border-radius:9px;color:#61470d;line-height:1.45;padding:12px}.printHint,.status{color:var(--muted);font-size:.86rem;line-height:1.45;min-height:22px}.danger{color:var(--bad)}.sectiongap{display:grid;gap:12px}.splitTitle{align-items:center;display:flex;gap:9px}.toast{background:#182d20;border-radius:8px;bottom:18px;box-shadow:var(--shadow);color:#fff;display:none;font-weight:760;left:50%;padding:11px 14px;position:fixed;transform:translateX(-50%);z-index:20}.toast.show{display:block}.mobiletop{display:none}@media(max-width:1120px){.appframe{grid-template-columns:1fr}.sidebar{height:auto;position:static}.tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.sidefoot{display:none}.topbar,.grid,.grid.three{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.rates,.formgrid,.four{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){body{font-size:13px}.shell{padding:14px}.sidebar{padding:14px}.tabs{grid-template-columns:1fr 1fr}.topbar{gap:12px}.datebox,.metrics,.rates,.formgrid,.two,.four{grid-template-columns:1fr}.heading{align-items:start;flex-direction:column}.titleblock h1{font-size:2rem}}
   </style>
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">Banana merchant operations</p>
-        <h1>Purchases, sales, invoices, imports, and daily reports</h1>
-        <p class="copy">A database-backed desk for daily banana rates, farmer bills, vendor invoices, vehicle-wise loading, monthly Excel-compatible exports, and email-ready reports.</p>
+  <div class="appframe">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">K</div>
+        <div><strong>KMA Banana</strong><span>Merchant operations suite</span></div>
       </div>
-      <div class="datebox">
-        <label for="bizDate">Business date</label>
-        <input id="bizDate" type="date">
-        <label for="month">Report month</label>
-        <input id="month" type="month">
-        <button id="refresh">Refresh data</button>
-      </div>
-    </section>
-
-    <nav class="tabs" id="tabs"></nav>
+      <nav class="tabs" id="tabs"></nav>
+      <div class="sidefoot">Private beta workspace. Data is stored in the hosted database and reports are generated from saved records.</div>
+    </aside>
+    <main class="shell">
+      <section class="topbar">
+        <div class="titleblock">
+          <p class="eyebrow">Live operations</p>
+          <h1>Banana trading control desk</h1>
+          <p class="copy">Manage farmer purchases, vendor dispatches, invoices, bulk uploads, monthly exports, and daily reports from one production-style workspace.</p>
+        </div>
+        <div class="datebox">
+          <div class="datefield">
+            <label for="bizDate">Business date</label>
+            <input id="bizDate" type="date">
+          </div>
+          <div class="datefield">
+            <label for="month">Report month</label>
+            <input id="month" type="month">
+          </div>
+          <button id="refresh">Refresh</button>
+        </div>
+      </section>
 
     <section class="metrics">
       <article class="metric"><span>Purchase value</span><strong id="mPurchase">Rs 0</strong></article>
@@ -56,9 +67,9 @@ const APP_HTML = `<!doctype html>
     </section>
 
     <section id="dashboard" class="view active">
-      <div class="grid">
+      <div class="grid three">
         <div class="panel wide">
-          <div class="heading"><div><p class="eyebrow">Daily rates</p><h2>Banana rates and 7-day averages</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Daily rates</p><h2>Rate board and 7-day averages</h2><p class="subcopy">Set the buy and sell rates used by the counter team for the selected business date.</p></div></div>
           <div class="rates" id="rateCards"></div>
           <form class="formgrid four" id="rateForm">
             <select name="banana_type"></select>
@@ -67,15 +78,16 @@ const APP_HTML = `<!doctype html>
             <button>Save rate</button>
           </form>
         </div>
-        <div class="panel"><div class="heading"><div><p class="eyebrow">Recent purchases</p><h2>Farmer loads</h2></div></div><div id="recentPurchases"></div></div>
-        <div class="panel"><div class="heading"><div><p class="eyebrow">Recent sales</p><h2>Vendor dispatches</h2></div></div><div id="recentSales"></div></div>
+        <div class="panel"><div class="heading"><div><p class="eyebrow">Recent purchases</p><h2>Farmer loads</h2><p class="subcopy">Latest incoming stock for the selected month.</p></div></div><div id="recentPurchases"></div></div>
+        <div class="panel"><div class="heading"><div><p class="eyebrow">Recent sales</p><h2>Vendor dispatches</h2><p class="subcopy">Latest sales and collection status.</p></div></div><div id="recentSales"></div></div>
+        <div class="panel"><div class="heading"><div><p class="eyebrow">Workflow health</p><h2>Today at a glance</h2><p class="subcopy">Quick checks before closing the day.</p></div></div><div id="workflowHealth"></div></div>
       </div>
     </section>
 
     <section id="masters" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Master list</p><h2>Farmers</h2></div><a class="btn secondary" href="/api/template?type=farmers">Template</a></div>
+          <div class="heading"><div><p class="eyebrow">Master list</p><h2>Farmers</h2><p class="subcopy">Keep farmer contact, village, GST, and notes ready for billing and imports.</p></div><a class="btn secondary" href="/api/template?type=farmers">Template</a></div>
           <form class="formgrid two" id="farmerForm">
             <input name="name" placeholder="Farmer name" required><input name="phone" placeholder="Phone">
             <input name="village" placeholder="Village"><input name="gst" placeholder="GST / tax id">
@@ -85,7 +97,7 @@ const APP_HTML = `<!doctype html>
           <div id="farmersTable"></div>
         </div>
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Master list</p><h2>Vendors</h2></div><a class="btn secondary" href="/api/template?type=vendors">Template</a></div>
+          <div class="heading"><div><p class="eyebrow">Master list</p><h2>Vendors</h2><p class="subcopy">Maintain market buyers for sales invoices, collections, and monthly reports.</p></div><a class="btn secondary" href="/api/template?type=vendors">Template</a></div>
           <form class="formgrid two" id="vendorForm">
             <input name="name" placeholder="Vendor name" required><input name="phone" placeholder="Phone">
             <input name="market" placeholder="Market"><input name="gst" placeholder="GST / tax id">
@@ -100,7 +112,7 @@ const APP_HTML = `<!doctype html>
     <section id="transactions" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Inbound</p><h2>Purchase from farmer</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Inbound</p><h2>Purchase from farmer</h2><p class="subcopy">Record vehicle loads as they arrive from farms.</p></div></div>
           <form class="formgrid two" id="purchaseForm">
             <select name="farmer_id" required></select><select name="banana_type"></select>
             <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches"><input name="weight_kg" type="number" min="0" step="0.01" placeholder="Weight kg" required>
@@ -109,7 +121,7 @@ const APP_HTML = `<!doctype html>
           </form>
         </div>
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Outbound</p><h2>Sale to vendor</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Outbound</p><h2>Sale to vendor</h2><p class="subcopy">Capture dispatch weight, sale rate, payment, and vehicle number.</p></div></div>
           <form class="formgrid two" id="saleForm">
             <select name="vendor_id" required></select><select name="banana_type"></select>
             <input name="weight_kg" type="number" min="0" step="0.01" placeholder="Weight kg" required><input name="rate" type="number" min="0" step="0.01" placeholder="Sale rate / kg" required>
@@ -117,14 +129,14 @@ const APP_HTML = `<!doctype html>
             <textarea name="notes" placeholder="Notes"></textarea><button>Save sale</button>
           </form>
         </div>
-        <div class="panel wide"><div class="heading"><div><p class="eyebrow">Daily list</p><h2>Purchase and sales records</h2></div></div><div id="transactionTables"></div></div>
+        <div class="panel wide"><div class="heading"><div><p class="eyebrow">Daily list</p><h2>Purchase and sales records</h2><p class="subcopy">Saved records for the selected business date.</p></div></div><div id="transactionTables"></div></div>
       </div>
     </section>
 
     <section id="invoices" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Billing</p><h2>Create invoice</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Billing</p><h2>Create invoice</h2><p class="subcopy">Generate farmer payable invoices or vendor sales invoices for any date range.</p></div></div>
           <form class="formgrid two" id="invoiceForm">
             <select name="party_type"><option value="farmer">Farmer payable invoice</option><option value="vendor">Vendor sales invoice</option></select>
             <select name="party_id"></select>
@@ -133,14 +145,14 @@ const APP_HTML = `<!doctype html>
           </form>
           <p class="printHint">Each invoice opens as a print-ready page.</p>
         </div>
-        <div class="panel"><div class="heading"><div><p class="eyebrow">Invoices</p><h2>Recent invoices</h2></div></div><div id="invoiceTable"></div></div>
+        <div class="panel"><div class="heading"><div><p class="eyebrow">Invoices</p><h2>Recent invoices</h2><p class="subcopy">Open any invoice in a print-ready page.</p></div></div><div id="invoiceTable"></div></div>
       </div>
     </section>
 
     <section id="imports" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Bulk upload</p><h2>Upload Excel-compatible CSV</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Bulk upload</p><h2>Upload Excel-compatible CSV</h2><p class="subcopy">Use templates to load farmers, vendors, purchases, or sales in batches.</p></div></div>
           <div class="notice">Download a template, fill it in Excel, save as CSV, then upload it here. Supported: farmers, vendors, purchases, sales.</div>
           <form class="formgrid two" id="importForm">
             <select name="type"><option>farmers</option><option>vendors</option><option>purchases</option><option>sales</option></select>
@@ -155,7 +167,7 @@ const APP_HTML = `<!doctype html>
           </div>
         </div>
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Downloads</p><h2>Monthly purchase and sales Excel files</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Downloads</p><h2>Monthly Excel files</h2><p class="subcopy">Download master lists or the selected month of purchase and sales records.</p></div></div>
           <div class="actions">
             <button class="secondary" data-export="farmers">Farmers list</button>
             <button class="secondary" data-export="vendors">Vendors list</button>
@@ -170,7 +182,7 @@ const APP_HTML = `<!doctype html>
     <section id="reports" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Daily report</p><h2>Email and WhatsApp report</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Daily report</p><h2>Email and WhatsApp report</h2><p class="subcopy">Share the daily settlement summary with the team or owner.</p></div></div>
           <textarea id="dailyReport" readonly></textarea>
           <div class="actions">
             <button id="copyReport">Copy report</button>
@@ -180,7 +192,7 @@ const APP_HTML = `<!doctype html>
           </div>
         </div>
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Automatic email</p><h2>Daily email settings</h2></div></div>
+          <div class="heading"><div><p class="eyebrow">Automatic email</p><h2>Daily email settings</h2><p class="subcopy">Configure recipients now; provider credentials can be added later for automatic sending.</p></div></div>
           <form class="formgrid" id="emailForm">
             <input name="daily_email_recipients" placeholder="Emails separated by comma">
             <input name="daily_email_time" type="time" value="19:00">
@@ -192,10 +204,12 @@ const APP_HTML = `<!doctype html>
         </div>
       </div>
     </section>
-  </main>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
   <script>
     const state = { farmers: [], vendors: [], purchases: [], sales: [], rates: [], invoices: [], settings: {}, emailLogs: [] };
-    const tabs = [["dashboard","Dashboard"],["masters","Farmers & vendors"],["transactions","Daily entries"],["invoices","Invoices"],["imports","Bulk import/export"],["reports","Reports & email"]];
+    const tabs = [["dashboard","Dashboard"],["masters","Masters"],["transactions","Daily entries"],["invoices","Invoices"],["imports","Import / Export"],["reports","Reports"]];
     const $ = id => document.getElementById(id);
     const rs = v => "Rs " + Math.round(Number(v || 0)).toLocaleString("en-IN");
     const kg = v => Number(v || 0).toLocaleString("en-IN") + " kg";
@@ -230,9 +244,17 @@ const APP_HTML = `<!doctype html>
       render();
     }
 
+    function raw(value) { return { raw: value }; }
+    function cell(value) { return value && value.raw ? value.raw : esc(value); }
     function table(headers, rows) {
-      if (!rows.length) return '<p class="status">No records yet.</p>';
-      return '<div class="tablewrap"><table><thead><tr>' + headers.map(h => '<th>' + h + '</th>').join("") + '</tr></thead><tbody>' + rows.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join("") + '</tr>').join("") + '</tbody></table></div>';
+      if (!rows.length) return '<p class="status">No records yet. Add records or upload a CSV template to start.</p>';
+      return '<div class="tablewrap"><table><thead><tr>' + headers.map(h => '<th>' + h + '</th>').join("") + '</tr></thead><tbody>' + rows.map(r => '<tr>' + r.map(c => '<td>' + cell(c) + '</td>').join("") + '</tr>').join("") + '</tbody></table></div>';
+    }
+    function showToast(message) {
+      const box = $("toast");
+      box.textContent = message;
+      box.classList.add("show");
+      setTimeout(() => box.classList.remove("show"), 1800);
     }
 
     function dailyText() {
@@ -263,13 +285,21 @@ const APP_HTML = `<!doctype html>
       }).join("");
       document.querySelector('select[name="farmer_id"]').innerHTML = options(state.farmers, "farmer");
       document.querySelector('select[name="vendor_id"]').innerHTML = options(state.vendors, "vendor");
-      document.querySelector('select[name="party_id"]').innerHTML = options(state.farmers, "party");
+      const invoiceType = $("invoiceForm").party_type.value;
+      document.querySelector('select[name="party_id"]').innerHTML = options(invoiceType === "vendor" ? state.vendors : state.farmers, "party");
       $("farmersTable").innerHTML = table(["Name","Phone","Village","GST"], state.farmers.map(x => [x.name,x.phone,x.village,x.gst]));
       $("vendorsTable").innerHTML = table(["Name","Phone","Market","GST"], state.vendors.map(x => [x.name,x.phone,x.market,x.gst]));
       $("recentPurchases").innerHTML = table(["Date","Farmer","Type","Kg","Value","Vehicle"], state.purchases.slice(0,8).map(x => [x.purchase_date,x.farmer_name,x.banana_type,kg(x.weight_kg),rs(x.weight_kg*x.rate),x.vehicle_no]));
       $("recentSales").innerHTML = table(["Date","Vendor","Type","Kg","Value","Pending","Vehicle"], state.sales.slice(0,8).map(x => [x.sale_date,x.vendor_name,x.banana_type,kg(x.weight_kg),rs(x.weight_kg*x.rate),rs(x.weight_kg*x.rate-x.paid),x.vehicle_no]));
+      $("workflowHealth").innerHTML = table(["Check","Status"], [
+        ["Farmers", raw('<span class="pill">' + state.farmers.length + ' saved</span>')],
+        ["Vendors", raw('<span class="pill">' + state.vendors.length + ' saved</span>')],
+        ["Today purchases", raw('<span class="pill">' + dailyPurchases.length + ' entries</span>')],
+        ["Today sales", raw('<span class="pill">' + dailySales.length + ' entries</span>')],
+        ["Collections", raw('<span class="pill ' + (sv - paid > 0 ? 'warn' : '') + '">' + rs(sv - paid) + ' pending</span>')]
+      ]);
       $("transactionTables").innerHTML = "<h3>Purchases</h3>" + table(["Date","Farmer","Type","Bunches","Kg","Rate","Value","Vehicle"], dailyPurchases.map(x => [x.purchase_date,x.farmer_name,x.banana_type,x.bunches,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),x.vehicle_no])) + "<h3>Sales</h3>" + table(["Date","Vendor","Type","Kg","Rate","Value","Paid","Vehicle"], dailySales.map(x => [x.sale_date,x.vendor_name,x.banana_type,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),rs(x.paid),x.vehicle_no]));
-      $("invoiceTable").innerHTML = table(["No","Party","Period","Total","Pending","Print"], state.invoices.map(x => [x.invoice_no,x.party_name,x.from_date + " to " + x.to_date,rs(x.total),rs(x.pending),'<a href="/invoice/' + x.id + '" target="_blank">Print</a>']));
+      $("invoiceTable").innerHTML = table(["No","Party","Period","Total","Pending","Status","Action"], state.invoices.map(x => [x.invoice_no,x.party_name,x.from_date + " to " + x.to_date,rs(x.total),rs(x.pending),raw('<span class="pill ' + (x.pending > 0 ? 'warn' : '') + '">' + esc(x.status) + '</span>'),raw('<a class="btn secondary" href="/invoice/' + x.id + '" target="_blank">Print</a>')]));
       $("dailyReport").value = dailyText();
       $("mailto").href = "mailto:?subject=" + encodeURIComponent("Banana report " + d) + "&body=" + encodeURIComponent($("dailyReport").value);
       $("whatsapp").href = "https://wa.me/?text=" + encodeURIComponent($("dailyReport").value);
@@ -279,7 +309,7 @@ const APP_HTML = `<!doctype html>
     }
 
     function formData(form) { return Object.fromEntries(new FormData(form).entries()); }
-    async function save(path, form, extra) { await api(path, Object.assign(formData(form), extra || {})); form.reset(); await load(); }
+    async function save(path, form, extra) { await api(path, Object.assign(formData(form), extra || {})); form.reset(); showToast("Saved successfully"); await load(); }
     $("farmerForm").onsubmit = e => { e.preventDefault(); save("/api/farmers", e.target); };
     $("vendorForm").onsubmit = e => { e.preventDefault(); save("/api/vendors", e.target); };
     $("rateForm").onsubmit = e => { e.preventDefault(); save("/api/rates", e.target, { rate_date: $("bizDate").value }); };
@@ -287,11 +317,11 @@ const APP_HTML = `<!doctype html>
     $("saleForm").onsubmit = e => { e.preventDefault(); save("/api/sales", e.target, { sale_date: $("bizDate").value }); };
     $("invoiceForm").party_type.onchange = e => { document.querySelector('select[name="party_id"]').innerHTML = options(e.target.value === "farmer" ? state.farmers : state.vendors, "party"); };
     $("invoiceForm").from_date.value = today.slice(0,8) + "01"; $("invoiceForm").to_date.value = today;
-    $("invoiceForm").onsubmit = async e => { e.preventDefault(); const out = await api("/api/invoices/generate", formData(e.target)); window.open("/invoice/" + out.id, "_blank"); await load(); };
-    $("emailForm").onsubmit = async e => { e.preventDefault(); await api("/api/settings", formData(e.target)); $("emailStatus").textContent = "Settings saved."; await load(); };
-    $("sendDaily").onclick = async () => { const out = await api("/api/email/send-daily", { report_date: $("bizDate").value }); $("emailStatus").textContent = out.message; await load(); };
+    $("invoiceForm").onsubmit = async e => { e.preventDefault(); const out = await api("/api/invoices/generate", formData(e.target)); showToast("Invoice generated"); window.open("/invoice/" + out.id, "_blank"); await load(); };
+    $("emailForm").onsubmit = async e => { e.preventDefault(); await api("/api/settings", formData(e.target)); $("emailStatus").textContent = "Settings saved."; showToast("Email settings saved"); await load(); };
+    $("sendDaily").onclick = async () => { const out = await api("/api/email/send-daily", { report_date: $("bizDate").value }); $("emailStatus").textContent = out.message; showToast("Daily report logged"); await load(); };
     $("refresh").onclick = load; $("bizDate").onchange = load; $("month").onchange = load;
-    $("copyReport").onclick = async () => { await navigator.clipboard.writeText($("dailyReport").value); $("copyReport").textContent = "Copied"; setTimeout(() => $("copyReport").textContent = "Copy report", 1200); };
+    $("copyReport").onclick = async () => { await navigator.clipboard.writeText($("dailyReport").value); $("copyReport").textContent = "Copied"; showToast("Report copied"); setTimeout(() => $("copyReport").textContent = "Copy report", 1200); };
     $("printReport").onclick = () => { const w = window.open("", "_blank"); w.document.write("<pre>" + esc($("dailyReport").value) + "</pre>"); w.print(); };
 
     function csvParse(text) {
@@ -299,7 +329,7 @@ const APP_HTML = `<!doctype html>
       for (let i=0;i<text.length;i++) { const c=text[i], n=text[i+1]; if(c==='"'&&q&&n==='"'){cell+='"';i++;} else if(c==='"'){q=!q;} else if(c===","&&!q){row.push(cell);cell="";} else if((c==="\\n"||c==="\\r")&&!q){ if(c==="\\r"&&n==="\\n") i++; row.push(cell); if(row.some(v=>v.trim())) rows.push(row); row=[]; cell=""; } else cell+=c; }
       row.push(cell); if(row.some(v=>v.trim())) rows.push(row); const head = rows.shift().map(h => h.trim()); return rows.map(r => Object.fromEntries(head.map((h,i) => [h, r[i] || ""])));
     }
-    $("importForm").onsubmit = async e => { e.preventDefault(); const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; e.target.reset(); await load(); };
+    $("importForm").onsubmit = async e => { e.preventDefault(); const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; showToast("Import complete"); e.target.reset(); await load(); };
     document.querySelectorAll("[data-export]").forEach(b => b.onclick = () => { location.href = "/api/export?type=" + b.dataset.export + "&month=" + $("month").value; });
     load().catch(err => { document.body.insertAdjacentHTML("afterbegin", '<div class="notice danger">' + esc(err.message) + '</div>'); });
   </script>
@@ -488,8 +518,9 @@ async function invoiceHtml(db, id) {
   const invoice = await db.prepare("SELECT * FROM invoices WHERE id = ?").bind(Number(id)).first();
   if (!invoice) return html("Invoice not found", 404);
   const items = await all(db, "SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY item_date, id", Number(id));
-  const rows = items.map((item) => `<tr><td>${e(item.item_date)}</td><td>${e(item.description)}</td><td>${e(item.quantity_kg)}</td><td>${e(item.rate)}</td><td>${e(item.amount)}</td></tr>`).join("");
-  return html(`<!doctype html><html><head><meta charset="utf-8"><title>${e(invoice.invoice_no)}</title><style>body{font-family:Arial;margin:32px;color:#1f2a24}h1{margin:0 0 8px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:24px 0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccd5c4;padding:9px;text-align:left}.totals{margin-left:auto;margin-top:20px;width:320px}.actions{margin-bottom:20px}@media print{.actions{display:none}}</style></head><body><div class="actions"><button onclick="print()">Print invoice</button></div><h1>Banana Merchant Invoice</h1><p>${e(invoice.invoice_no)}</p><div class="meta"><div><strong>Party</strong><br>${e(invoice.party_name)} (${e(invoice.party_type)})</div><div><strong>Period</strong><br>${e(invoice.from_date)} to ${e(invoice.to_date)}</div><div><strong>Invoice date</strong><br>${e(invoice.invoice_date)}</div><div><strong>Status</strong><br>${e(invoice.status)}</div></div><table><thead><tr><th>Date</th><th>Description</th><th>Kg</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><table class="totals"><tr><th>Total</th><td>${e(invoice.total)}</td></tr><tr><th>Paid</th><td>${e(invoice.paid)}</td></tr><tr><th>Pending</th><td>${e(invoice.pending)}</td></tr></table></body></html>`);
+  const money = (value) => `Rs ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
+  const rows = items.map((item) => `<tr><td>${e(item.item_date)}</td><td>${e(item.description)}</td><td class="num">${e(item.quantity_kg)}</td><td class="num">${money(item.rate)}</td><td class="num">${money(item.amount)}</td></tr>`).join("");
+  return html(`<!doctype html><html><head><meta charset="utf-8"><title>${e(invoice.invoice_no)}</title><style>*{box-sizing:border-box}body{background:#f4f6f3;color:#17211b;font-family:Arial,Helvetica,sans-serif;margin:0;padding:28px}.sheet{background:#fff;border:1px solid #dce3d8;margin:auto;max-width:920px;padding:34px}.actions{margin:0 auto 16px;max-width:920px}button{background:#2f6b43;border:0;border-radius:7px;color:#fff;font-weight:700;padding:10px 14px}.top{align-items:start;border-bottom:3px solid #2f6b43;display:grid;grid-template-columns:1fr auto;gap:24px;padding-bottom:22px}.brand{font-size:1.8rem;font-weight:900}.muted{color:#66736a}.badge{background:#eef5ee;border:1px solid #d7e6d8;border-radius:999px;color:#184c2c;display:inline-block;font-size:.78rem;font-weight:800;margin-top:8px;padding:5px 10px;text-transform:uppercase}.meta{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:14px;margin:24px 0}.box{border:1px solid #dce3d8;border-radius:8px;padding:14px}.label{color:#66736a;font-size:.72rem;font-weight:800;text-transform:uppercase}.value{font-size:1rem;font-weight:800;margin-top:5px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #e8ede4;padding:11px 9px;text-align:left}th{background:#f6f8f4;color:#66736a;font-size:.72rem;text-transform:uppercase}.num{text-align:right}.totals{margin-left:auto;margin-top:24px;width:340px}.totals td,.totals th{border:1px solid #dce3d8}.totals .due{background:#fff7df;font-size:1.05rem}.footer{border-top:1px solid #dce3d8;color:#66736a;font-size:.85rem;margin-top:34px;padding-top:14px}@media print{body{background:#fff;padding:0}.actions{display:none}.sheet{border:0;max-width:none;padding:20px}}</style></head><body><div class="actions"><button onclick="print()">Print invoice</button></div><main class="sheet"><section class="top"><div><div class="brand">KMA Banana</div><p class="muted">Banana merchant purchase and sales billing</p></div><div><h1>Invoice</h1><p class="muted">${e(invoice.invoice_no)}</p><span class="badge">${e(invoice.status)}</span></div></section><section class="meta"><div class="box"><div class="label">Party</div><div class="value">${e(invoice.party_name)}</div><p class="muted">${e(invoice.party_type)} invoice</p></div><div class="box"><div class="label">Invoice date</div><div class="value">${e(invoice.invoice_date)}</div></div><div class="box"><div class="label">Period</div><div class="value">${e(invoice.from_date)} to ${e(invoice.to_date)}</div></div></section><table><thead><tr><th>Date</th><th>Description</th><th class="num">Kg</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody>${rows}</tbody></table><table class="totals"><tr><th>Total</th><td class="num">${money(invoice.total)}</td></tr><tr><th>Paid</th><td class="num">${money(invoice.paid)}</td></tr><tr class="due"><th>Pending</th><td class="num">${money(invoice.pending)}</td></tr></table><p class="footer">Generated from saved purchase and sales records in KMA Banana Merchant Desk.</p></main></body></html>`);
 }
 
 async function dailyReport(db, reportDate) {

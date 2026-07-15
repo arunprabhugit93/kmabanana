@@ -10,17 +10,20 @@ test("banana merchant source replaces the starter preview", async () => {
     readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /Banana trade control desk/);
+  assert.match(page, /KMS Banana control desk/);
   assert.match(page, /Farmer purchase entry/);
   assert.match(page, /Vendor sale entry/);
   assert.match(page, /Send WhatsApp/);
   assert.match(page, /7 day avg sell/);
-  assert.match(layout, /Banana Merchant Desk/);
+  assert.match(layout, /KMS Banana Desk/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|react-loading-skeleton/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
-  assert.match(worker, /KMA Banana/);
+  assert.match(worker, /KMS Banana/);
   assert.match(worker, /class="appframe"/);
   assert.match(worker, /Workflow health/);
+  assert.match(worker, /Cutter entry/);
+  assert.match(worker, /Submit cutting weights/);
+  assert.match(worker, /cutter_batches/);
   assert.match(worker, /Print invoice/);
   assert.doesNotMatch(worker, /class="hero"/);
 });

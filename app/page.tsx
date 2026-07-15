@@ -222,7 +222,7 @@ export default function Home() {
     const saleValue = reportRows.sales.reduce((sum, item) => sum + totalSale(item), 0);
     const pending = reportRows.sales.reduce((sum, item) => sum + totalSale(item) - item.paid, 0);
     const lines = [
-      `Banana Merchant Report - ${date}`,
+      `KMS Banana Report - ${date}`,
       `Report: ${reportType.toUpperCase()} ${reportTarget !== "All" ? `- ${reportTarget}` : ""}`,
       `Purchase value: ${formatMoney(purchaseValue)}`,
       `Sales value: ${formatMoney(saleValue)}`,
@@ -324,8 +324,8 @@ export default function Home() {
     <main className="app-shell">
       <section className="hero-band">
         <div>
-          <p className="eyebrow">Banana trade control desk</p>
-          <h1>Daily billing, loading, and settlement reports</h1>
+          <p className="eyebrow">KMS Banana control desk</p>
+          <h1>KMS Banana billing, loading, and settlement reports</h1>
           <p className="hero-copy">
             Track banana rates, farmer purchases, vehicle loads, vendor sales,
             collections, and share-ready daily reports from one screen.

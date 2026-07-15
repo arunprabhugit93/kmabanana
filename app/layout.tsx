@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Banana Merchant Desk",
+  title: "KMS Banana Desk",
   description:
-    "Daily banana rates, vehicle loading, farmer purchase, vendor sale, and settlement reports.",
+    "KMS Banana operations for rates, cutter approval, purchases, sales, vehicles, invoices, and reports.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

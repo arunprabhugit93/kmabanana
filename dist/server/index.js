@@ -14,6 +14,8 @@ const TABLES = [
   "CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, log_type TEXT NOT NULL, reference_id INTEGER, status TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS email_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, report_date TEXT NOT NULL, recipients TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, provider_message TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "CREATE TABLE IF NOT EXISTS auth_otps (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, code_hash TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "CREATE TABLE IF NOT EXISTS auth_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE INDEX IF NOT EXISTS purchases_date_idx ON purchases (purchase_date)",
   "CREATE INDEX IF NOT EXISTS sales_date_idx ON sales (sale_date)",
   "CREATE INDEX IF NOT EXISTS purchases_farmer_idx ON purchases (farmer_id)",
@@ -21,7 +23,9 @@ const TABLES = [
   "CREATE INDEX IF NOT EXISTS invoices_party_idx ON invoices (party_type, party_id)",
   "CREATE INDEX IF NOT EXISTS cutter_batches_status_idx ON cutter_batches (status)",
   "CREATE INDEX IF NOT EXISTS cutter_batches_date_idx ON cutter_batches (batch_date)",
-  "CREATE INDEX IF NOT EXISTS cutter_entries_batch_idx ON cutter_entries (batch_id)"
+  "CREATE INDEX IF NOT EXISTS cutter_entries_batch_idx ON cutter_entries (batch_id)",
+  "CREATE INDEX IF NOT EXISTS auth_otps_email_idx ON auth_otps (email, expires_at)",
+  "CREATE INDEX IF NOT EXISTS auth_sessions_token_idx ON auth_sessions (token_hash)"
 ];
 
 const APP_HTML = `<!doctype html>
@@ -32,10 +36,33 @@ const APP_HTML = `<!doctype html>
   <title>KMS Banana Desk</title>
   <style>
     :root{--bg:#f4f6f3;--ink:#17211b;--muted:#66736a;--panel:#fff;--panel2:#f9fbf7;--line:#dce3d8;--line2:#eef2eb;--brand:#2f6b43;--brand2:#184c2c;--accent:#c9972d;--blue:#315f90;--bad:#b3463c;--ok:#2f7d4c;--shadow:0 16px 40px rgba(23,33,27,.08)}
-    *{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:radial-gradient(circle at 92% 8%,rgba(217,173,58,.17),transparent 280px),var(--bg);color:var(--ink);font-family:Inter,Arial,Helvetica,sans-serif;font-size:14px}button,input,select,textarea{font:inherit}button,.btn{align-items:center;background:var(--brand);border:1px solid transparent;border-radius:7px;color:#fff;cursor:pointer;display:inline-flex;font-weight:760;gap:7px;justify-content:center;min-height:38px;padding:9px 13px;text-decoration:none;transition:background .15s,border-color .15s,box-shadow .15s}button:hover,.btn:hover{background:var(--brand2);box-shadow:0 8px 18px rgba(47,107,67,.18)}button.secondary,.btn.secondary{background:#fff;border-color:var(--line);color:var(--ink)}button.secondary:hover,.btn.secondary:hover{background:#f1f5ee;box-shadow:none}button.danger{background:var(--bad);color:#fff}input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:7px;color:var(--ink);outline:none;padding:10px 11px;width:100%}input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(47,107,67,.12)}textarea{min-height:142px;resize:vertical}h1,h2,h3,p{margin:0}.appframe{display:grid;grid-template-columns:264px minmax(0,1fr);min-height:100vh}.sidebar{background:#15291d;color:#dceade;display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh}.brand{align-items:center;display:flex;gap:11px;margin-bottom:24px}.logo{background:#fff;border-radius:10px;display:block;height:46px;object-fit:contain;padding:5px;width:76px}.brand strong{display:block;font-size:1.02rem}.brand span{color:#9eb4a4;font-size:.78rem}.tabs{display:grid;gap:6px}.tabs button{background:transparent;border:1px solid transparent;color:#c7d8cc;justify-content:flex-start;padding:10px 12px}.tabs button:hover{background:rgba(255,255,255,.08);box-shadow:none}.tabs button.active{background:#e7f2e9;color:#183823}.sidefoot{border-top:1px solid rgba(255,255,255,.12);color:#98afa0;font-size:.78rem;line-height:1.45;margin-top:auto;padding-top:16px}.shell{max-width:1600px;padding:24px 28px 40px}.topbar{align-items:center;display:grid;gap:18px;grid-template-columns:minmax(0,1fr) 450px;margin-bottom:18px}.titleblock h1{font-size:clamp(1.8rem,3vw,3.1rem);letter-spacing:0;line-height:1.02}.copy{color:var(--muted);font-size:1rem;line-height:1.55;margin-top:10px;max-width:850px}.eyebrow{color:var(--accent);font-size:.72rem;font-weight:850;letter-spacing:0;text-transform:uppercase}.datebox{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:grid;gap:10px;grid-template-columns:1fr 1fr auto;padding:14px}.datebox label{color:var(--muted);font-size:.74rem;font-weight:800;text-transform:uppercase}.datefield{display:grid;gap:5px}.metrics{display:grid;gap:12px;grid-template-columns:repeat(5,minmax(0,1fr));margin:16px 0}.metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 22px rgba(23,33,27,.05);display:grid;gap:9px;min-height:104px;padding:16px;position:relative}.metric:before{background:var(--brand);border-radius:10px 0 0 10px;content:"";inset:0 auto 0 0;position:absolute;width:4px}.metric span{color:var(--muted);font-size:.75rem;font-weight:850;text-transform:uppercase}.metric strong{font-size:clamp(1.25rem,2vw,1.85rem);letter-spacing:0}.view{display:none}.view.active{display:block}.grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:1.1fr 1fr 1fr}.panel{background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,255,255,.92));border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(23,33,27,.05);padding:18px}.wide{grid-column:1/-1}.heading{align-items:end;display:flex;gap:12px;justify-content:space-between;margin-bottom:14px}.heading h2{font-size:1.2rem;line-height:1.2;margin-top:3px}.subcopy{color:var(--muted);font-size:.86rem;line-height:1.45;margin-top:5px}.formgrid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}.formgrid button{align-self:end}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.four{grid-template-columns:repeat(4,minmax(0,1fr))}.five{grid-template-columns:repeat(5,minmax(0,1fr))}.actions{display:flex;flex-wrap:wrap;gap:9px}.tablewrap{border:1px solid var(--line);border-radius:9px;overflow:auto}table{border-collapse:separate;border-spacing:0;width:100%}th,td{border-bottom:1px solid var(--line2);font-size:.86rem;padding:10px 11px;text-align:left;white-space:nowrap}tr:last-child td{border-bottom:0}th{background:#f6f8f4;color:var(--muted);font-size:.72rem;font-weight:850;position:sticky;text-transform:uppercase;top:0}td:first-child{color:var(--ink);font-weight:780}.num{text-align:right}.pill{background:#eef5ee;border:1px solid #d7e6d8;border-radius:999px;color:var(--brand2);display:inline-flex;font-size:.76rem;font-weight:820;padding:4px 8px}.pill.warn{background:#fff5dc;border-color:#ecd28c;color:#6b4d0d}.pill.bad{background:#fff0ee;border-color:#edc4bf;color:var(--bad)}.rates{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.rate{background:linear-gradient(180deg,#fbfcf9,#eef5ee);border:1px solid var(--line);border-radius:10px;display:grid;gap:9px;min-height:132px;padding:15px}.rate strong{font-size:1.55rem}.rate span,.rate small{color:var(--muted)}.notice{background:#fff8e8;border:1px solid #ead394;border-radius:9px;color:#61470d;line-height:1.45;padding:12px}.printHint,.status{color:var(--muted);font-size:.86rem;line-height:1.45;min-height:22px}.danger:not(button){color:var(--bad)}.sectiongap{display:grid;gap:12px}.toast{background:#182d20;border-radius:8px;bottom:18px;box-shadow:var(--shadow);color:#fff;display:none;font-weight:760;left:50%;padding:11px 14px;position:fixed;transform:translateX(-50%);z-index:20}.toast.show{display:block}@media(max-width:1120px){.appframe{grid-template-columns:1fr}.sidebar{height:auto;position:static}.tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.sidefoot{display:none}.topbar,.grid,.grid.three{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.rates,.formgrid,.four,.five{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){body{font-size:13px}.shell{padding:14px}.sidebar{padding:14px}.tabs{grid-template-columns:1fr 1fr}.topbar{gap:12px}.datebox,.metrics,.rates,.formgrid,.two,.four,.five{grid-template-columns:1fr}.heading{align-items:start;flex-direction:column}.titleblock h1{font-size:2rem}}
+    *{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:radial-gradient(circle at 92% 8%,rgba(217,173,58,.17),transparent 280px),var(--bg);color:var(--ink);font-family:Inter,Arial,Helvetica,sans-serif;font-size:14px}button,input,select,textarea{font:inherit}button,.btn{align-items:center;background:var(--brand);border:1px solid transparent;border-radius:7px;color:#fff;cursor:pointer;display:inline-flex;font-weight:760;gap:7px;justify-content:center;min-height:38px;padding:9px 13px;text-decoration:none;transition:background .15s,border-color .15s,box-shadow .15s}button:hover,.btn:hover{background:var(--brand2);box-shadow:0 8px 18px rgba(47,107,67,.18)}button.secondary,.btn.secondary{background:#fff;border-color:var(--line);color:var(--ink)}button.secondary:hover,.btn.secondary:hover{background:#f1f5ee;box-shadow:none}button.danger{background:var(--bad);color:#fff}input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:7px;color:var(--ink);outline:none;padding:10px 11px;width:100%}input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(47,107,67,.12)}textarea{min-height:142px;resize:vertical}h1,h2,h3,p{margin:0}.appframe{display:none;grid-template-columns:264px minmax(0,1fr);min-height:100vh}.auth-ready .appframe{display:grid}.authscreen{align-items:center;display:grid;min-height:100vh;padding:24px}.auth-ready .authscreen{display:none}.authcard{background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(255,255,255,.94));border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:grid;gap:18px;margin:auto;max-width:440px;padding:28px;width:100%}.authbrand{align-items:center;display:flex;gap:12px}.authbrand img{background:#fff;border:1px solid var(--line);border-radius:10px;height:58px;object-fit:contain;padding:5px;width:92px}.authcard h1{font-size:1.75rem;line-height:1.1}.authcopy{color:var(--muted);line-height:1.55}.authform{display:grid;gap:11px}.authform label{color:var(--muted);font-size:.74rem;font-weight:850;text-transform:uppercase}.authpanel{background:#f8faf6;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:.88rem;line-height:1.45;padding:12px}.accountbar{border-top:1px solid rgba(255,255,255,.12);display:grid;gap:10px;margin-top:16px;padding-top:16px}.accountbar span{color:#c7d8cc;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.accountbar button{background:transparent;border-color:rgba(255,255,255,.18);color:#dceade;justify-content:flex-start}.sidebar{background:#15291d;color:#dceade;display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh}.brand{align-items:center;display:flex;gap:11px;margin-bottom:24px}.logo{background:#fff;border-radius:10px;display:block;height:46px;object-fit:contain;padding:5px;width:76px}.brand strong{display:block;font-size:1.02rem}.brand span{color:#9eb4a4;font-size:.78rem}.tabs{display:grid;gap:6px}.tabs button{background:transparent;border:1px solid transparent;color:#c7d8cc;justify-content:flex-start;padding:10px 12px}.tabs button:hover{background:rgba(255,255,255,.08);box-shadow:none}.tabs button.active{background:#e7f2e9;color:#183823}.sidefoot{border-top:1px solid rgba(255,255,255,.12);color:#98afa0;font-size:.78rem;line-height:1.45;margin-top:auto;padding-top:16px}.shell{max-width:1600px;padding:24px 28px 40px}.topbar{align-items:center;display:grid;gap:18px;grid-template-columns:minmax(0,1fr) 450px;margin-bottom:18px}.titleblock h1{font-size:clamp(1.8rem,3vw,3.1rem);letter-spacing:0;line-height:1.02}.copy{color:var(--muted);font-size:1rem;line-height:1.55;margin-top:10px;max-width:850px}.eyebrow{color:var(--accent);font-size:.72rem;font-weight:850;letter-spacing:0;text-transform:uppercase}.datebox{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:grid;gap:10px;grid-template-columns:1fr 1fr auto;padding:14px}.datebox label{color:var(--muted);font-size:.74rem;font-weight:800;text-transform:uppercase}.datefield{display:grid;gap:5px}.metrics{display:grid;gap:12px;grid-template-columns:repeat(5,minmax(0,1fr));margin:16px 0}.metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 22px rgba(23,33,27,.05);display:grid;gap:9px;min-height:104px;padding:16px;position:relative}.metric:before{background:var(--brand);border-radius:10px 0 0 10px;content:"";inset:0 auto 0 0;position:absolute;width:4px}.metric span{color:var(--muted);font-size:.75rem;font-weight:850;text-transform:uppercase}.metric strong{font-size:clamp(1.25rem,2vw,1.85rem);letter-spacing:0}.view{display:none}.view.active{display:block}.grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:1.1fr 1fr 1fr}.panel{background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,255,255,.92));border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(23,33,27,.05);padding:18px}.wide{grid-column:1/-1}.heading{align-items:end;display:flex;gap:12px;justify-content:space-between;margin-bottom:14px}.heading h2{font-size:1.2rem;line-height:1.2;margin-top:3px}.subcopy{color:var(--muted);font-size:.86rem;line-height:1.45;margin-top:5px}.formgrid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}.formgrid button{align-self:end}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.four{grid-template-columns:repeat(4,minmax(0,1fr))}.five{grid-template-columns:repeat(5,minmax(0,1fr))}.actions{display:flex;flex-wrap:wrap;gap:9px}.tablewrap{border:1px solid var(--line);border-radius:9px;overflow:auto}table{border-collapse:separate;border-spacing:0;width:100%}th,td{border-bottom:1px solid var(--line2);font-size:.86rem;padding:10px 11px;text-align:left;white-space:nowrap}tr:last-child td{border-bottom:0}th{background:#f6f8f4;color:var(--muted);font-size:.72rem;font-weight:850;position:sticky;text-transform:uppercase;top:0}td:first-child{color:var(--ink);font-weight:780}.num{text-align:right}.pill{background:#eef5ee;border:1px solid #d7e6d8;border-radius:999px;color:var(--brand2);display:inline-flex;font-size:.76rem;font-weight:820;padding:4px 8px}.pill.warn{background:#fff5dc;border-color:#ecd28c;color:#6b4d0d}.pill.bad{background:#fff0ee;border-color:#edc4bf;color:var(--bad)}.rates{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}.rate{background:linear-gradient(180deg,#fbfcf9,#eef5ee);border:1px solid var(--line);border-radius:10px;display:grid;gap:9px;min-height:132px;padding:15px}.rate strong{font-size:1.55rem}.rate span,.rate small{color:var(--muted)}.notice{background:#fff8e8;border:1px solid #ead394;border-radius:9px;color:#61470d;line-height:1.45;padding:12px}.printHint,.status{color:var(--muted);font-size:.86rem;line-height:1.45;min-height:22px}.danger:not(button){color:var(--bad)}.sectiongap{display:grid;gap:12px}.toast{background:#182d20;border-radius:8px;bottom:18px;box-shadow:var(--shadow);color:#fff;display:none;font-weight:760;left:50%;padding:11px 14px;position:fixed;transform:translateX(-50%);z-index:20}.toast.show{display:block}@media(max-width:1120px){.appframe{grid-template-columns:1fr}.sidebar{height:auto;position:static}.tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.sidefoot{display:none}.topbar,.grid,.grid.three{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.rates,.formgrid,.four,.five{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){body{font-size:13px}.shell{padding:14px}.sidebar{padding:14px}.tabs{grid-template-columns:1fr 1fr}.topbar{gap:12px}.datebox,.metrics,.rates,.formgrid,.two,.four,.five{grid-template-columns:1fr}.heading{align-items:start;flex-direction:column}.titleblock h1{font-size:2rem}}
   </style>
 </head>
 <body>
+  <section class="authscreen" id="authScreen">
+    <div class="authcard">
+      <div class="authbrand">
+        <img src="/logo.png" alt="KMS Banana logo">
+        <div>
+          <p class="eyebrow">Secure access</p>
+          <h1>KMS Banana Desk</h1>
+        </div>
+      </div>
+      <p class="authcopy">Enter your email address and verify the one-time password to open the merchant workspace.</p>
+      <form class="authform" id="loginForm">
+        <label for="loginEmail">Email address</label>
+        <input id="loginEmail" name="email" type="email" autocomplete="email" placeholder="name@example.com" required>
+        <button>Send OTP</button>
+      </form>
+      <form class="authform" id="otpForm" style="display:none">
+        <label for="loginOtp">One-time password</label>
+        <input id="loginOtp" name="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 digit OTP" required>
+        <button>Login</button>
+      </form>
+      <div class="authpanel" id="authStatus">Waiting for email verification.</div>
+    </div>
+  </section>
   <div class="appframe">
     <aside class="sidebar">
       <div class="brand">
@@ -43,6 +70,10 @@ const APP_HTML = `<!doctype html>
         <div><strong>KMS Banana</strong><span>Merchant operations suite</span></div>
       </div>
       <nav class="tabs" id="tabs"></nav>
+      <div class="accountbar">
+        <span id="userEmail"></span>
+        <button type="button" id="logout">Logout</button>
+      </div>
       <div class="sidefoot">Private beta workspace. Data is stored in the hosted database and reports are generated from saved records.</div>
     </aside>
     <main class="shell">
@@ -264,6 +295,7 @@ const APP_HTML = `<!doctype html>
     const kg = v => Number(v || 0).toLocaleString("en-IN") + " kg";
     const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
     const today = new Date().toISOString().slice(0,10);
+    let pendingEmail = "";
     $("bizDate").value = today;
     $("month").value = today.slice(0,7);
 
@@ -286,8 +318,30 @@ const APP_HTML = `<!doctype html>
 
     async function api(path, body) {
       const res = await fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);
+      if (res.status === 401) {
+        document.body.classList.remove("auth-ready");
+        $("authStatus").textContent = "Session expired. Please login again.";
+        throw new Error("Login required");
+      }
       if (!res.ok) throw new Error(await res.text());
       return res.json();
+    }
+
+    function setUser(user) {
+      document.body.classList.add("auth-ready");
+      $("userEmail").textContent = user.email || "";
+      $("authStatus").textContent = "Logged in.";
+    }
+
+    async function initAuth() {
+      const me = await api("/api/auth/me");
+      if (!me.authenticated) {
+        document.body.classList.remove("auth-ready");
+        $("authStatus").textContent = "Enter your email address to receive an OTP.";
+        return;
+      }
+      setUser(me.user);
+      await load();
     }
 
     async function load() {
@@ -438,6 +492,26 @@ const APP_HTML = `<!doctype html>
     $("refresh").onclick = load; $("bizDate").onchange = load; $("month").onchange = load;
     $("copyReport").onclick = async () => { await navigator.clipboard.writeText($("dailyReport").value); $("copyReport").textContent = "Copied"; showToast("Report copied"); setTimeout(() => $("copyReport").textContent = "Copy report", 1200); };
     $("printReport").onclick = () => { const w = window.open("", "_blank"); w.document.write("<pre>" + esc($("dailyReport").value) + "</pre>"); w.print(); };
+    $("loginForm").onsubmit = async e => {
+      e.preventDefault();
+      const input = formData(e.target);
+      pendingEmail = input.email.trim().toLowerCase();
+      const out = await api("/api/auth/request", { email: pendingEmail });
+      $("otpForm").style.display = "grid";
+      $("loginOtp").focus();
+      $("authStatus").textContent = out.dev_otp ? "OTP for testing: " + out.dev_otp : "OTP sent to " + pendingEmail + ".";
+    };
+    $("otpForm").onsubmit = async e => {
+      e.preventDefault();
+      const out = await api("/api/auth/verify", { email: pendingEmail, otp: formData(e.target).otp });
+      setUser(out.user);
+      showToast("Logged in");
+      await load();
+    };
+    $("logout").onclick = async () => {
+      await api("/api/auth/logout", {});
+      location.reload();
+    };
 
     function csvParse(text) {
       const rows = []; let row = [], cell = "", q = false;
@@ -446,22 +520,26 @@ const APP_HTML = `<!doctype html>
     }
     $("importForm").onsubmit = async e => { e.preventDefault(); const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; showToast("Import complete"); e.target.reset(); await load(); };
     document.querySelectorAll("[data-export]").forEach(b => b.onclick = () => { location.href = "/api/export?type=" + b.dataset.export + "&month=" + $("month").value; });
-    load().catch(err => { document.body.insertAdjacentHTML("afterbegin", '<div class="notice danger">' + esc(err.message) + '</div>'); });
+    initAuth().catch(err => { $("authStatus").textContent = err.message; });
   </script>
 </body>
 </html>`;
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
+  const headers = new Headers(extraHeaders);
+  headers.set("content-type", "application/json; charset=utf-8");
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" }
+    headers
   });
 }
 
-function html(body, status = 200) {
+function html(body, status = 200, extraHeaders = {}) {
+  const headers = new Headers(extraHeaders);
+  headers.set("content-type", "text/html; charset=utf-8");
   return new Response(body, {
     status,
-    headers: { "content-type": "text/html; charset=utf-8" }
+    headers
   });
 }
 
@@ -526,6 +604,91 @@ async function bodyJson(request) {
   } catch {
     return {};
   }
+}
+
+function cookieValue(request, name) {
+  const cookie = request.headers.get("cookie") || "";
+  return cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) || "";
+}
+
+async function sha256(value) {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function randomDigits(length = 6) {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return String(array[0] % 10 ** length).padStart(length, "0");
+}
+
+function randomToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function isoAfter(minutes) {
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+function sessionCookie(token, maxAge = 60 * 60 * 24 * 30) {
+  return `kms_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+function clearSessionCookie() {
+  return "kms_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
+}
+
+async function currentUser(db, request) {
+  const token = cookieValue(request, "kms_session");
+  if (!token) return null;
+  const tokenHash = await sha256(token);
+  const session = await db.prepare("SELECT email, expires_at FROM auth_sessions WHERE token_hash = ?").bind(tokenHash).first();
+  if (!session || new Date(session.expires_at).getTime() <= Date.now()) return null;
+  await db.prepare("UPDATE auth_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE token_hash = ?").bind(tokenHash).run();
+  return { email: session.email };
+}
+
+async function sendOtpEmail(env, email, code) {
+  const subject = "KMS Banana login OTP";
+  const text = `Your KMS Banana login OTP is ${code}. It expires in 10 minutes.`;
+  if (env.RESEND_API_KEY && env.EMAIL_FROM) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: [email], subject, text })
+    });
+    return { sent: response.ok, message: await response.text() };
+  }
+  return { sent: false, message: "Email provider is not configured." };
+}
+
+async function requestOtp(db, env, input) {
+  const email = String(input.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "Enter a valid email address." }, 400);
+  const code = randomDigits();
+  await db.prepare("INSERT INTO auth_otps (email, code_hash, expires_at) VALUES (?, ?, ?)").bind(email, await sha256(`${email}:${code}`), isoAfter(10)).run();
+  const delivery = await sendOtpEmail(env, email, code);
+  return json({ ok: true, delivery: delivery.sent ? "sent" : "draft", dev_otp: delivery.sent ? undefined : code });
+}
+
+async function verifyOtp(db, input) {
+  const email = String(input.email || "").trim().toLowerCase();
+  const otp = String(input.otp || "").trim();
+  const otpHash = await sha256(`${email}:${otp}`);
+  const row = await db.prepare("SELECT id FROM auth_otps WHERE email = ? AND code_hash = ? AND used_at = '' AND expires_at > ? ORDER BY id DESC LIMIT 1").bind(email, otpHash, new Date().toISOString()).first();
+  if (!row) return json({ error: "Invalid or expired OTP." }, 401);
+  await db.prepare("UPDATE auth_otps SET used_at = CURRENT_TIMESTAMP WHERE id = ?").bind(row.id).run();
+  const token = randomToken();
+  await db.prepare("INSERT INTO auth_sessions (email, token_hash, expires_at) VALUES (?, ?, ?)").bind(email, await sha256(token), isoAfter(60 * 24 * 30)).run();
+  return json({ ok: true, user: { email } }, 200, { "set-cookie": sessionCookie(token) });
+}
+
+async function logout(db, request) {
+  const token = cookieValue(request, "kms_session");
+  if (token) await db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").bind(await sha256(token)).run();
+  return json({ ok: true }, 200, { "set-cookie": clearSessionCookie() });
 }
 
 function currentMonth() {
@@ -794,6 +957,15 @@ async function handleApi(request, env, url) {
   if (!db) return json({ error: "D1 database binding is missing." }, 500);
   await ensureDb(db);
   const input = request.method === "POST" ? await bodyJson(request) : {};
+  if (url.pathname === "/api/auth/me") {
+    const user = await currentUser(db, request);
+    return json({ authenticated: Boolean(user), user });
+  }
+  if (url.pathname === "/api/auth/request") return requestOtp(db, env, input);
+  if (url.pathname === "/api/auth/verify") return verifyOtp(db, input);
+  if (url.pathname === "/api/auth/logout") return logout(db, request);
+  const user = await currentUser(db, request);
+  if (!user) return json({ error: "Login required" }, 401);
   if (url.pathname === "/api/state") return json(await getState(db, url));
   if (url.pathname === "/api/farmers") { await createFarmer(db, input); return json({ ok: true }); }
   if (url.pathname === "/api/vendors") { await createVendor(db, input); return json({ ok: true }); }
@@ -832,6 +1004,8 @@ export default {
     if (url.pathname.startsWith("/invoice/")) {
       if (!env.DB) return html("D1 database binding is missing.", 500);
       await ensureDb(env.DB);
+      const user = await currentUser(env.DB, request);
+      if (!user) return html('<!doctype html><html><head><meta charset="utf-8"><title>Login required</title></head><body><p>Login required. Open the KMS Banana Desk and verify your email OTP before printing invoices.</p></body></html>', 401);
       return invoiceHtml(env.DB, url.pathname.split("/").pop(), env);
     }
     return html(APP_HTML);

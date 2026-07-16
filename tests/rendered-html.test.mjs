@@ -19,6 +19,14 @@ test("banana merchant source replaces the starter preview", async () => {
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|react-loading-skeleton/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.match(worker, /KMS Banana/);
+  assert.match(worker, /id="loginForm"/);
+  assert.match(worker, /id="otpForm"/);
+  assert.match(worker, /auth_otps/);
+  assert.match(worker, /auth_sessions/);
+  assert.match(worker, /\/api\/auth\/request/);
+  assert.match(worker, /\/api\/auth\/verify/);
+  assert.match(worker, /kms_session/);
+  assert.match(worker, /Login required/);
   assert.match(worker, /class="appframe"/);
   assert.match(worker, /Workflow health/);
   assert.match(worker, /Cutter entry/);

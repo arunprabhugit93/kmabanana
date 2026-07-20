@@ -1,0 +1,23 @@
+{
+  // Deploy-only config for `wrangler deploy` against a real Cloudflare
+  // account. Local dev uses vite.config.ts + @cloudflare/vite-plugin
+  // instead, which is why this isn't named wrangler.jsonc.
+  "name": "kms-banana-desk",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kms-banana-d1",
+      "database_id": "b5398779-e89f-4422-8aae-939ef0008d8f"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

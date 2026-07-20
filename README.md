@@ -91,6 +91,47 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run deploy`: deploy the Worker + D1-backed app straight to Cloudflare (see below)
+
+## Live deployment (Cloudflare Workers + D1)
+
+The app is deployed at **https://kms-banana-desk.kmsbanana.workers.dev** on a
+Cloudflare account, using `wrangler.deploy.jsonc` (separate from the vite/vinext
+dev config, which uses a placeholder local D1 binding). To redeploy after
+making changes:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...   # Account API token: D1:Edit, Workers Scripts:Edit
+export CLOUDFLARE_ACCOUNT_ID=...
+npm run deploy
+```
+
+The Worker bootstraps its own D1 schema on first request (`worker/schema.ts`),
+so a fresh database needs no manual migration step.
+
+### ⚠️ Configure a real email provider before relying on this for real data
+
+Right now no `RESEND_API_KEY` / `EMAIL_FROM` secret is set on the live
+deployment. Without one, `worker/auth.ts` falls back to returning the login
+OTP directly in the `/api/auth/request` API response instead of emailing it —
+useful for local dev, but on the **live** deployment it means anyone who
+knows (or guesses) an allowlisted staff email can log themselves in without
+ever touching that person's real inbox, since the OTP is handed to whoever
+asks for it. Fix before trusting this with real farmer/vendor financial data:
+
+1. Sign up for [Resend](https://resend.com) (free tier, no card required) and
+   verify a sending domain or use their sandbox address for testing.
+2. Set the secrets on the Worker: `npx wrangler secret put RESEND_API_KEY
+   --config wrangler.deploy.jsonc` and same for `EMAIL_FROM`.
+3. Redeploy (`npm run deploy`). OTPs will then be emailed for real and the
+   `dev_otp` fallback in the API response stops being reachable.
+
+### First login becomes the owner
+
+The very first successful login on a fresh database is automatically granted
+the `owner` role (full access, including managing other staff). Log in with
+whichever email should be the business owner's account first — don't use a
+throwaway/test email for that first login.
 
 ## Learn More
 

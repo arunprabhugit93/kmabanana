@@ -2,42 +2,59 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("banana merchant source replaces the starter preview", async () => {
-  const [page, layout, packageJson, worker] = await Promise.all([
+test("banana merchant worker replaces the starter preview", async () => {
+  const [page, layout, packageJson, index, shell, schema, invoices, auth, purchases] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/views/shell.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/invoices.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/purchases.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /KMS Banana control desk/);
-  assert.match(page, /Farmer purchase entry/);
-  assert.match(page, /Vendor sale entry/);
-  assert.match(page, /Send WhatsApp/);
-  assert.match(page, /7 day avg sell/);
+  // The Next.js app router page is unreachable in production (the Worker's
+  // fetch handler serves the real app for every non-API route), so it must
+  // stay a harmless stub rather than the old hardcoded demo dashboard.
+  assert.doesNotMatch(page, /initialPurchases|initialSales|SkeletonPreview|codex-preview|react-loading-skeleton/);
   assert.match(layout, /KMS Banana Desk/);
-  assert.doesNotMatch(page, /SkeletonPreview|codex-preview|react-loading-skeleton/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
-  assert.match(worker, /KMS Banana/);
-  assert.match(worker, /id="loginForm"/);
-  assert.match(worker, /id="otpForm"/);
-  assert.match(worker, /auth_otps/);
-  assert.match(worker, /auth_sessions/);
-  assert.match(worker, /\/api\/auth\/request/);
-  assert.match(worker, /\/api\/auth\/verify/);
-  assert.match(worker, /kms_session/);
-  assert.match(worker, /Login required/);
-  assert.match(worker, /class="appframe"/);
-  assert.match(worker, /Workflow health/);
-  assert.match(worker, /Cutter entry/);
-  assert.match(worker, /Submit cutting weights/);
-  assert.match(worker, /cutter_batches/);
-  assert.match(worker, /Print invoice/);
-  assert.match(worker, /data:image\/png;base64/);
-  assert.match(worker, /invoiceHtml\(env\.DB, url\.pathname\.split\("\/"\)\.pop\(\), env\)/);
-  assert.match(worker, /sale_date AS item_date, banana_type, weight_kg, rate, paid, vehicle_no, notes/);
-  assert.match(worker, /purchase_date AS item_date, banana_type, weight_kg, rate, bunches, vehicle_no, notes/);
-  assert.match(worker, /Vehicle \$\{row\.vehicle_no\}/);
-  assert.match(worker, /Units \$\{row\.bunches\}/);
-  assert.doesNotMatch(worker, /class="hero"/);
+
+  // The real UI lives in worker/views/shell.ts.
+  assert.match(shell, /KMS Banana/);
+  assert.match(shell, /id="loginForm"/);
+  assert.match(shell, /id="otpForm"/);
+  assert.match(shell, /class="appframe"/);
+  assert.match(shell, /Workflow health/);
+  assert.match(shell, /Cutter entry/);
+  assert.match(shell, /Submit cutting weights/);
+  assert.match(shell, /Vehicle trips/);
+  assert.match(shell, /Stock reconciliation/);
+  assert.match(shell, /Add staff/);
+  assert.match(shell, /Activity log/);
+
+  // Auth and schema modules.
+  assert.match(auth, /kms_session/);
+  assert.match(schema, /auth_otps/);
+  assert.match(schema, /auth_sessions/);
+  assert.match(schema, /cutter_batches/);
+  assert.match(schema, /staff_users/);
+  assert.match(schema, /farmer_payments/);
+  assert.match(schema, /vehicle_trips/);
+  assert.match(schema, /audit_logs/);
+
+  // Invoice rendering.
+  assert.match(invoices, /Print invoice/);
+  assert.match(invoices, /data:image\/png;base64/);
+
+  // Purchases still apply the cutter stem-weight reduction.
+  assert.match(purchases, /stem_reduction_per_unit/);
+
+  // The Worker entry wires auth, routing, and login gating together.
+  assert.match(index, /\/api\/auth\/request/);
+  assert.match(index, /\/api\/auth\/verify/);
+  assert.match(index, /Login required/);
+  assert.match(index, /appShell\(\)/);
 });

@@ -1,3 +1,4 @@
+import { sendEmail } from "./email";
 import { all, money } from "./util";
 
 export async function dailyReport(db: D1Database, reportDate: string) {
@@ -26,14 +27,10 @@ export async function sendDailyEmail(db: D1Database, env: Env, reportDate: strin
   const body = await dailyReport(db, reportDate);
   let status = "draft";
   let message = "Email provider is not configured. Report was saved as a draft log.";
-  if (env.RESEND_API_KEY && env.EMAIL_FROM && recipients) {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: recipients.split(",").map((x) => x.trim()).filter(Boolean), subject, text: body })
-    });
-    status = response.ok ? "sent" : "failed";
-    message = await response.text();
+  if (recipients) {
+    const delivery = await sendEmail(env, recipients.split(",").map((x) => x.trim()).filter(Boolean), subject, body);
+    status = delivery.sent ? "sent" : "failed";
+    message = delivery.message;
   }
   await db.prepare(
     "INSERT INTO email_logs (report_date, recipients, subject, body, status, provider_message) VALUES (?, ?, ?, ?, ?, ?)"

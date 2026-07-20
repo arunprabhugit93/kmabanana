@@ -19,7 +19,7 @@ interface D1Database {
 interface Env {
   DB: D1Database;
   ASSETS?: { fetch(request: Request): Promise<Response> };
-  RESEND_API_KEY?: string;
+  SENDGRID_API_KEY?: string;
   EMAIL_FROM?: string;
 }
 

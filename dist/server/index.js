@@ -1,3 +1,32 @@
+//#region worker/email.ts
+async function sendEmail(env, to, subject, text) {
+	if (!env.SENDGRID_API_KEY || !env.EMAIL_FROM) return {
+		sent: false,
+		message: "Email provider is not configured."
+	};
+	const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+		method: "POST",
+		headers: {
+			authorization: `Bearer ${env.SENDGRID_API_KEY}`,
+			"content-type": "application/json"
+		},
+		body: JSON.stringify({
+			personalizations: [{ to: to.map((email) => ({ email })) }],
+			from: { email: env.EMAIL_FROM },
+			subject,
+			content: [{
+				type: "text/plain",
+				value: text
+			}]
+		})
+	});
+	const message = response.status === 202 ? "Sent" : await response.text();
+	return {
+		sent: response.status === 202,
+		message
+	};
+}
+//#endregion
 //#region worker/util.ts
 var BANANAS = [
 	"Nendran",
@@ -125,29 +154,7 @@ function requireRole(user, roles) {
 async function sendOtpEmail(env, email, code) {
 	const subject = "KMS Banana login OTP";
 	const text = `Your KMS Banana login OTP is ${code}. It expires in 10 minutes.`;
-	if (env.RESEND_API_KEY && env.EMAIL_FROM) {
-		const response = await fetch("https://api.resend.com/emails", {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${env.RESEND_API_KEY}`,
-				"content-type": "application/json"
-			},
-			body: JSON.stringify({
-				from: env.EMAIL_FROM,
-				to: [email],
-				subject,
-				text
-			})
-		});
-		return {
-			sent: response.ok,
-			message: await response.text()
-		};
-	}
-	return {
-		sent: false,
-		message: "Email provider is not configured."
-	};
+	return sendEmail(env, [email], subject, text);
 }
 async function requestOtp(db, env, input) {
 	const email = String(input.email || "").trim().toLowerCase();
@@ -1206,22 +1213,10 @@ async function sendDailyEmail(db, env, reportDate) {
 	const body = await dailyReport(db, reportDate);
 	let status = "draft";
 	let message = "Email provider is not configured. Report was saved as a draft log.";
-	if (env.RESEND_API_KEY && env.EMAIL_FROM && recipients) {
-		const response = await fetch("https://api.resend.com/emails", {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${env.RESEND_API_KEY}`,
-				"content-type": "application/json"
-			},
-			body: JSON.stringify({
-				from: env.EMAIL_FROM,
-				to: recipients.split(",").map((x) => x.trim()).filter(Boolean),
-				subject,
-				text: body
-			})
-		});
-		status = response.ok ? "sent" : "failed";
-		message = await response.text();
+	if (recipients) {
+		const delivery = await sendEmail(env, recipients.split(",").map((x) => x.trim()).filter(Boolean), subject, body);
+		status = delivery.sent ? "sent" : "failed";
+		message = delivery.message;
 	}
 	await db.prepare("INSERT INTO email_logs (report_date, recipients, subject, body, status, provider_message) VALUES (?, ?, ?, ?, ?, ?)").bind(reportDate, recipients, subject, body, status, message).run();
 	return {

@@ -1,3 +1,4 @@
+import { sendEmail } from "./email";
 import { cookieValue, isoAfter, json, randomDigits, randomToken, sha256 } from "./util";
 
 export type Role = "owner" | "staff" | "cutter";
@@ -53,15 +54,7 @@ export function requireRole(user: AuthUser, roles: Role[]): Response | null {
 async function sendOtpEmail(env: Env, email: string, code: string) {
   const subject = "KMS Banana login OTP";
   const text = `Your KMS Banana login OTP is ${code}. It expires in 10 minutes.`;
-  if (env.RESEND_API_KEY && env.EMAIL_FROM) {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [email], subject, text })
-    });
-    return { sent: response.ok, message: await response.text() };
-  }
-  return { sent: false, message: "Email provider is not configured." };
+  return sendEmail(env, [email], subject, text);
 }
 
 export async function requestOtp(db: D1Database, env: Env, input: Record<string, unknown>) {

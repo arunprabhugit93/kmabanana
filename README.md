@@ -141,6 +141,34 @@ deployment it means anyone who knows an allowlisted staff email can log in
 without touching that person's inbox. Configure SendGrid before trusting
 this with real farmer/vendor financial data.
 
+### WhatsApp provider
+
+`worker/whatsapp.ts` sends via Meta's **WhatsApp Cloud API**. Business-initiated
+messages (the recipient didn't message first) require a pre-approved message
+template — freeform text only works inside a 24h window after the recipient
+messages the business number.
+
+Setup:
+
+1. Create a Meta Business Account at business.facebook.com, then an app at
+   developers.facebook.com/apps with the WhatsApp product added.
+2. Get the Phone Number ID, WhatsApp Business Account ID, and a permanent
+   access token (Business Settings → Users → System Users).
+3. Set the secrets, then redeploy:
+   ```bash
+   npx wrangler secret put WHATSAPP_ACCESS_TOKEN --config wrangler.deploy.jsonc
+   npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID --config wrangler.deploy.jsonc
+   npx wrangler secret put WHATSAPP_BUSINESS_ACCOUNT_ID --config wrangler.deploy.jsonc
+   npm run deploy
+   ```
+4. Register message templates (`createMessageTemplate` in `worker/whatsapp.ts`)
+   for `purchase_invoice_notice`, `sale_invoice_notice`, and
+   `period_report_notice`, and wait for Meta's approval before sends will
+   actually go through.
+
+Without these configured, invoice/report sends report "WhatsApp is not
+configured" instead of failing — the rest of the app works fine either way.
+
 ### First login becomes the owner
 
 The very first successful login on a fresh database is automatically granted

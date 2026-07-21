@@ -21,66 +21,88 @@ interface Env {
   ASSETS?: { fetch(request: Request): Promise<Response> };
   SENDGRID_API_KEY?: string;
   EMAIL_FROM?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_BUSINESS_ACCOUNT_ID?: string;
 }
 
-interface PurchaseRow {
+interface BananaTypeRow {
   id: number;
-  purchase_date: string;
-  farmer_id: number | null;
-  farmer_name: string;
-  banana_type: string;
-  grade: string;
-  bunches: number;
-  gross_weight_kg: number;
-  stem_reduction_per_unit: number;
-  weight_kg: number;
-  rate: number;
-  vehicle_no: string;
+  name: string;
+  active: number;
+}
+
+interface FarmerRow {
+  id: number;
+  name: string;
+  phone: string;
+  village: string;
+  address: string;
+  gst: string;
+  email: string;
   notes: string;
-  trip_id: number | null;
 }
 
-interface SaleRow {
+interface VendorRow {
   id: number;
-  sale_date: string;
-  vendor_id: number | null;
-  vendor_name: string;
-  banana_type: string;
-  grade: string;
-  bunches: number;
-  gross_weight_kg: number;
-  stem_reduction_per_unit: number;
-  weight_kg: number;
-  rate: number;
-  paid: number;
-  vehicle_no: string;
+  name: string;
+  phone: string;
+  market: string;
+  address: string;
+  gst: string;
+  email: string;
   notes: string;
-  trip_id: number | null;
 }
 
-interface InvoiceItemRow {
-  id: number;
-  invoice_id: number;
-  item_type: "purchase" | "sale";
-  source_id: number;
-  item_date: string;
-  description: string;
-  quantity_kg: number;
-  rate: number;
-  amount: number;
-}
-
-interface InvoiceRow {
+interface PurchaseInvoiceRow {
   id: number;
   invoice_no: string;
-  party_type: "farmer" | "vendor";
-  party_id: number;
-  party_name: string;
-  from_date: string;
-  to_date: string;
   invoice_date: string;
+  farmer_id: number;
+  farmer_name: string;
   total: number;
   paid: number;
   pending: number;
   status: string;
+  notes: string;
+}
+
+interface PurchaseInvoiceItemRow {
+  id: number;
+  invoice_id: number;
+  banana_type: string;
+  grade: string;
+  units: number;
+  gross_weight_kg: number;
+  stem_reduction_per_unit: number;
+  net_weight_kg: number;
+  rate: number;
+  amount: number;
+  vehicle_no: string;
+  notes: string;
+}
+
+interface SaleInvoiceRow {
+  id: number;
+  invoice_no: string;
+  invoice_date: string;
+  vendor_id: number;
+  vendor_name: string;
+  vehicle_no: string;
+  total: number;
+  paid: number;
+  pending: number;
+  status: string;
+  notes: string;
+}
+
+interface SaleInvoiceItemRow {
+  id: number;
+  invoice_id: number;
+  banana_type: string;
+  grade: string;
+  net_weight_kg: number;
+  rate: number;
+  amount: number;
+  notes: string;
 }

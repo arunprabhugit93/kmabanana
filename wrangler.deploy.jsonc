@@ -23,6 +23,12 @@
       "database_id": "b5398779-e89f-4422-8aae-939ef0008d8f"
     }
   ],
+  "triggers": {
+    // 13:30 UTC = 19:00 IST. Fires the daily report every day; the
+    // scheduled() handler also sends the weekly report on Mondays and
+    // the monthly report on the 1st.
+    "crons": ["30 13 * * *"]
+  },
   "observability": {
     "enabled": true
   }

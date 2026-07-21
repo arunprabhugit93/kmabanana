@@ -1,7 +1,7 @@
 import { sendEmail } from "./email";
 import { cookieValue, isoAfter, json, randomDigits, randomToken, sha256 } from "./util";
 
-export type Role = "owner" | "staff" | "cutter";
+export type Role = "owner" | "staff";
 
 export type AuthUser = {
   email: string;
@@ -117,7 +117,7 @@ export async function listStaff(db: D1Database) {
 
 export async function createStaff(db: D1Database, input: Record<string, unknown>) {
   const email = String(input.email || "").trim().toLowerCase();
-  const role = ["owner", "staff", "cutter"].includes(String(input.role)) ? String(input.role) : "staff";
+  const role = ["owner", "staff"].includes(String(input.role)) ? String(input.role) : "staff";
   if (!email) throw new Error("Email is required");
   await db.prepare("INSERT INTO staff_users (email, name, role, active) VALUES (?, ?, ?, 1) ON CONFLICT(email) DO UPDATE SET name = excluded.name, role = excluded.role, active = 1")
     .bind(email, String(input.name || ""), role)

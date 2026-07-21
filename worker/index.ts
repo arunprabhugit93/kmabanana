@@ -1,16 +1,39 @@
-import { currentUser, listStaff, logout, requestOtp, requireRole, setStaffActive, verifyOtp, createStaff } from "./auth";
-import { appShell } from "./views/shell";
-import { invoiceHtml, generateInvoice, voidInvoice } from "./invoices";
-import { createFarmer, createRate, createVehicle, createVendor, deleteFarmer, deleteVehicle, deleteVendor, updateFarmer, updateVendor } from "./masters";
-import { createFarmerPayment, deleteFarmerPayment, farmerLedger } from "./payments";
-import { addCutterEntry, approveCutterBatch, createPurchase, cutterBatchDetail, deleteCutterEntry, deletePurchase, rejectCutterBatch, submitCutterBatch, updateCutterBatch, updateCutterEntry, updatePurchase } from "./purchases";
-import { createSale, deleteSale, updateSale } from "./sales";
-import { dailyReport, sendDailyEmail } from "./reports";
+import { createStaff, currentUser, listStaff, logout, requestOtp, requireRole, setStaffActive, verifyOtp } from "./auth";
+import {
+  createBananaType,
+  createFarmer,
+  createRate,
+  createVehicle,
+  createVendor,
+  deleteBananaType,
+  deleteFarmer,
+  deleteVehicle,
+  deleteVendor,
+  updateFarmer,
+  updateVendor
+} from "./masters";
+import {
+  createPurchaseInvoice,
+  purchaseInvoiceDetail,
+  purchaseInvoiceHtml,
+  sendPurchaseInvoice,
+  updatePurchaseInvoicePaid,
+  voidPurchaseInvoice
+} from "./purchaseInvoices";
+import {
+  createSaleInvoice,
+  saleInvoiceDetail,
+  saleInvoiceHtml,
+  sendSaleInvoice,
+  updateSaleInvoicePaid,
+  vehicleLoadAvailable,
+  voidSaleInvoice
+} from "./saleInvoices";
+import { periodReport, runScheduledReports, sendPeriodReport } from "./reports";
 import { ensureDb } from "./schema";
 import { getState } from "./state";
-import { addTripExpense, createTrip, deleteTrip, deleteTripExpense, settleTrip, tripDetail } from "./trips";
-import { exportData, importRows, template } from "./importExport";
-import { bodyJson, csv, html, json } from "./util";
+import { appShell } from "./views/shell";
+import { bodyJson, html, json } from "./util";
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   try {
@@ -73,105 +96,64 @@ async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Res
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
     await deleteVehicle(db, Number(input.id), by); return json({ ok: true });
   }
+  if (url.pathname === "/api/banana-types") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await createBananaType(db, input, by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/banana-types/delete") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await deleteBananaType(db, Number(input.id), by); return json({ ok: true });
+  }
   if (url.pathname === "/api/rates") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
     await createRate(db, input, by); return json({ ok: true });
   }
 
-  // Purchases / sales — owner + staff
-  if (url.pathname === "/api/purchases") {
+  // Purchase invoices — owner + staff
+  if (url.pathname === "/api/purchase-invoices/create") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await createPurchase(db, input, by); return json({ ok: true });
+    return json({ id: await createPurchaseInvoice(db, input, by) });
   }
-  if (url.pathname === "/api/purchases/update") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await updatePurchase(db, Number(input.id), input, by); return json({ ok: true });
+  if (url.pathname === "/api/purchase-invoices/detail") {
+    return json(await purchaseInvoiceDetail(db, Number(url.searchParams.get("id") || 0)));
   }
-  if (url.pathname === "/api/purchases/delete") {
+  if (url.pathname === "/api/purchase-invoices/paid") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await deletePurchase(db, Number(input.id), by); return json({ ok: true });
+    await updatePurchaseInvoicePaid(db, Number(input.id), Number(input.paid || 0), by); return json({ ok: true });
   }
-  if (url.pathname === "/api/sales") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await createSale(db, input, by); return json({ ok: true });
+  if (url.pathname === "/api/purchase-invoices/void") {
+    const denied = requireRole(user, ["owner"]); if (denied) return denied;
+    await voidPurchaseInvoice(db, Number(input.id), by); return json({ ok: true });
   }
-  if (url.pathname === "/api/sales/update") {
+  if (url.pathname === "/api/purchase-invoices/send") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await updateSale(db, Number(input.id), input, by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/sales/delete") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await deleteSale(db, Number(input.id), by); return json({ ok: true });
+    return json(await sendPurchaseInvoice(db, env, Number(input.id), url.origin));
   }
 
-  // Cutter workflow — submit allowed for everyone logged in (incl. cutter role); everything else owner+staff
-  if (url.pathname === "/api/cutter/submit") return json({ id: await submitCutterBatch(db, input, by) });
-  if (url.pathname === "/api/cutter/batch-detail") {
+  // Sale invoices — owner + staff
+  if (url.pathname === "/api/sale-invoices/vehicle-load") {
+    const vehicleNo = url.searchParams.get("vehicle_no") || "";
+    const date = url.searchParams.get("date") || "";
+    return json(await vehicleLoadAvailable(db, vehicleNo, date));
+  }
+  if (url.pathname === "/api/sale-invoices/create") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    return json(await cutterBatchDetail(db, Number(url.searchParams.get("id") || 0)));
+    return json({ id: await createSaleInvoice(db, input, by) });
   }
-  if (url.pathname === "/api/cutter/batch/update") {
+  if (url.pathname === "/api/sale-invoices/detail") {
+    return json(await saleInvoiceDetail(db, Number(url.searchParams.get("id") || 0)));
+  }
+  if (url.pathname === "/api/sale-invoices/paid") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await updateCutterBatch(db, Number(input.id), input, by); return json({ ok: true });
+    await updateSaleInvoicePaid(db, Number(input.id), Number(input.paid || 0), by); return json({ ok: true });
   }
-  if (url.pathname === "/api/cutter/entry/add") {
+  if (url.pathname === "/api/sale-invoices/void") {
+    const denied = requireRole(user, ["owner"]); if (denied) return denied;
+    await voidSaleInvoice(db, Number(input.id), by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/sale-invoices/send") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await addCutterEntry(db, input, by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/cutter/entry/update") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await updateCutterEntry(db, Number(input.id), input, by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/cutter/entry/delete") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await deleteCutterEntry(db, Number(input.id), by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/cutter/approve") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    return json({ id: await approveCutterBatch(db, input, by) });
-  }
-  if (url.pathname === "/api/cutter/reject") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await rejectCutterBatch(db, input, by); return json({ ok: true });
-  }
-
-  // Farmer payment ledger — owner + staff
-  if (url.pathname === "/api/farmer-payments") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await createFarmerPayment(db, input, by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/farmer-payments/delete") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await deleteFarmerPayment(db, Number(input.id), by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/farmer-ledger") {
-    const farmerId = Number(url.searchParams.get("farmer_id") || 0);
-    return json(await farmerLedger(db, farmerId));
-  }
-
-  // Vehicle trips — owner + staff
-  if (url.pathname === "/api/trips") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    return json({ id: await createTrip(db, input, by) });
-  }
-  if (url.pathname === "/api/trips/settle") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await settleTrip(db, Number(input.id), by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/trips/delete") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await deleteTrip(db, Number(input.id), by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/trip-detail") {
-    return json(await tripDetail(db, Number(url.searchParams.get("id") || 0)));
-  }
-  if (url.pathname === "/api/trip-expenses") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await addTripExpense(db, input, by); return json({ ok: true });
-  }
-  if (url.pathname === "/api/trip-expenses/delete") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    await deleteTripExpense(db, Number(input.id), by); return json({ ok: true });
+    return json(await sendSaleInvoice(db, env, Number(input.id), url.origin));
   }
 
   // Staff management — owner only
@@ -184,44 +166,23 @@ async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Res
     await setStaffActive(db, Number(input.id), Boolean(input.active)); return json({ ok: true });
   }
 
-  // Import / export — owner + staff
-  if (url.pathname === "/api/import") {
+  // Reports — owner + staff
+  if (url.pathname === "/api/reports/period") {
+    const from = url.searchParams.get("from") || "";
+    const to = url.searchParams.get("to") || "";
+    return json({ rows: await periodReport(db, from, to) });
+  }
+  if (url.pathname === "/api/reports/send") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    return json({ count: await importRows(db, input, by) });
+    const period = String(input.period || "Daily") as "Daily" | "Weekly" | "Monthly";
+    return json(await sendPeriodReport(db, env, period, String(input.from), String(input.to)));
   }
-  if (url.pathname === "/api/template") {
-    const type = url.searchParams.get("type") || "farmers";
-    return csv(template(type).join(",") + "\n", `${type}-template.csv`);
-  }
-  if (url.pathname === "/api/export") {
-    const type = url.searchParams.get("type") || "purchases";
-    const month = url.searchParams.get("month") || new Date().toISOString().slice(0, 7);
-    return csv(await exportData(db, type, month), `${type}-${month}.csv`);
-  }
-
-  // Invoices — owner + staff generate; void owner only
-  if (url.pathname === "/api/invoices/generate") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    return json({ id: await generateInvoice(db, input, by) });
-  }
-  if (url.pathname === "/api/invoices/void") {
-    const denied = requireRole(user, ["owner"]); if (denied) return denied;
-    await voidInvoice(db, Number(input.id), by); return json({ ok: true });
-  }
-
-  // Settings / reports — settings save is owner only, sending the report is owner + staff
   if (url.pathname === "/api/settings") {
     const denied = requireRole(user, ["owner"]); if (denied) return denied;
-    await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("daily_email_recipients", input.daily_email_recipients || "").run();
-    await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("daily_email_time", input.daily_email_time || "19:00").run();
+    for (const key of ["daily_email_recipients", "weekly_email_recipients", "monthly_email_recipients", "whatsapp_numbers"]) {
+      await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, input[key] || "").run();
+    }
     return json({ ok: true });
-  }
-  if (url.pathname === "/api/email/send-daily") {
-    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
-    return json(await sendDailyEmail(db, env, String(input.report_date || new Date().toISOString().slice(0, 10))));
-  }
-  if (url.pathname === "/api/reports/daily-text") {
-    return json({ text: await dailyReport(db, url.searchParams.get("date") || new Date().toISOString().slice(0, 10)) });
   }
 
   return json({ error: "Not found" }, 404);
@@ -232,19 +193,20 @@ const worker = {
     const url = new URL(request.url);
     if (url.pathname === "/logo.png" && env.ASSETS) return env.ASSETS.fetch(request);
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
-    if (url.pathname.startsWith("/invoice/")) {
+    if (url.pathname.startsWith("/purchase-invoice/") || url.pathname.startsWith("/sale-invoice/")) {
       if (!env.DB) return html("D1 database binding is missing.", 500);
       await ensureDb(env.DB);
       const user = await currentUser(env.DB, request);
       if (!user) return html('<!doctype html><html><head><meta charset="utf-8"><title>Login required</title></head><body><p>Login required. Open the KMS Banana Desk and verify your email OTP before printing invoices.</p></body></html>', 401);
-      return invoiceHtml(env.DB, url.pathname.split("/").pop() as string, env);
+      const id = url.pathname.split("/").pop() as string;
+      return url.pathname.startsWith("/purchase-invoice/") ? purchaseInvoiceHtml(env.DB, id, env) : saleInvoiceHtml(env.DB, id, env);
     }
     return html(appShell());
   },
   async scheduled(_event: unknown, env: Env): Promise<void> {
     if (!env.DB) return;
     await ensureDb(env.DB);
-    await sendDailyEmail(env.DB, env, new Date().toISOString().slice(0, 10));
+    await runScheduledReports(env.DB, env);
   }
 };
 

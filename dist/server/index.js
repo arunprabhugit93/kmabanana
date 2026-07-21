@@ -34,6 +34,9 @@ var BANANAS = [
 	"Poovan",
 	"Red Banana"
 ];
+function netWeight(grossWeightKg, units, stemReductionPerUnit) {
+	return Math.max(0, Number(grossWeightKg || 0) - Number(units || 0) * Number(stemReductionPerUnit || 0));
+}
 function json(data, status = 200, extraHeaders = {}) {
 	const headers = new Headers(extraHeaders);
 	headers.set("content-type", "application/json; charset=utf-8");
@@ -225,6 +228,7 @@ var STYLE = `
 `;
 var CLIENT_SCRIPT = `
 const BANANAS = ["Nendran", "Robusta", "Poovan", "Red Banana"];
+const GRADES = ["1st grade", "2nd grade", "3rd grade"];
 const state = { farmers: [], vendors: [], vehicles: [], purchases: [], sales: [], rates: [], invoices: [], cutterBatches: [], activityLogs: [], settings: {}, emailLogs: [], farmerPayments: [], trips: [], openTrips: [], stock: [], staff: [], auditLogs: [], me: null };
 const ALL_TABS = [["dashboard","Dashboard"],["cutter","Cutter entry"],["masters","Masters"],["transactions","Daily entries"],["trips","Vehicle trips"],["invoices","Invoices"],["imports","Import / Export"],["reports","Reports"],["staff","Staff"],["activity","Activity log"]];
 let cutLines = [];
@@ -263,7 +267,10 @@ function tripOptions(items) {
   return '<option value="">No trip</option>' + items.map(x => '<option value="' + x.id + '">' + esc(x.trip_date) + ' - ' + esc(x.vehicle_no) + '</option>').join("");
 }
 function bananaOptions() { return BANANAS.map(b => '<option>' + b + '</option>').join(""); }
+function gradeOptions() { return GRADES.map(g => '<option>' + g + '</option>').join(""); }
+function gradeOptionsWith(selected) { return GRADES.map(g => '<option' + (g === selected ? " selected" : "") + '>' + g + '</option>').join(""); }
 document.querySelectorAll('select[name="banana_type"]').forEach(s => s.innerHTML = bananaOptions());
+document.querySelectorAll('select[name="grade"]').forEach(s => s.innerHTML = gradeOptions());
 
 async function api(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);
@@ -272,8 +279,24 @@ async function api(path, body) {
     $("authStatus").textContent = "Session expired. Please login again.";
     throw new Error("Login required");
   }
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    let message = await res.text();
+    try { message = JSON.parse(message).error || message; } catch {}
+    throw new Error(message);
+  }
   return res.json();
+}
+async function guarded(fn) {
+  try { await fn(); } catch (err) { alert(err.message); }
+}
+function wireRateAutofill(formId, priceField) {
+  const form = $(formId);
+  const update = () => {
+    const r = state.rates.find(x => x.rate_date === $("bizDate").value && x.banana_type === form.banana_type.value && x.grade === form.grade.value);
+    if (r) form.rate.value = r[priceField];
+  };
+  form.banana_type.addEventListener("change", update);
+  form.grade.addEventListener("change", update);
 }
 
 function setUser(user) {
@@ -373,7 +396,7 @@ function editFarmer(row) {
     fld("GST / tax id", '<input name="gst" value="' + esc(row.gst) + '">') +
     '</div>' + fld("Address", '<textarea name="address">' + esc(row.address) + '</textarea>') + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/farmers/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Farmer updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmers/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Farmer updated"); await load(); }); };
 }
 function payFarmer(row) {
   openModal("Record payment - " + row.name, '<form id="mForm" class="sectiongap"><div class="formgrid two">' +
@@ -382,7 +405,7 @@ function payFarmer(row) {
     fld("Mode", '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank transfer</option><option value="upi">UPI</option><option value="other">Other</option></select>') +
     '</div>' + fld("Notes", '<textarea name="notes" placeholder="Advance, weekly settlement, etc."></textarea>') +
     '<button>Save payment</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/farmer-payments", Object.assign({ farmer_id: row.id }, formData(e.target))); closeModal(); showToast("Payment recorded"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmer-payments", Object.assign({ farmer_id: row.id }, formData(e.target))); closeModal(); showToast("Payment recorded"); await load(); }); };
 }
 async function viewLedger(row) {
   const data = await api("/api/farmer-ledger?farmer_id=" + row.id);
@@ -403,35 +426,42 @@ function editVendor(row) {
     fld("GST / tax id", '<input name="gst" value="' + esc(row.gst) + '">') +
     '</div>' + fld("Address", '<textarea name="address">' + esc(row.address) + '</textarea>') + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/vendors/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Vendor updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/vendors/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Vendor updated"); await load(); }); };
 }
 function editPurchase(row) {
-  openModal("Edit purchase", '<form id="mForm" class="sectiongap"><div class="formgrid two">' +
+  const gross = row.gross_weight_kg || row.weight_kg;
+  openModal("Edit purchase", '<form id="mForm" class="sectiongap"><div class="formgrid">' +
     fld("Date", '<input name="purchase_date" type="date" value="' + esc(row.purchase_date) + '" required>') +
     fld("Farmer", '<select name="farmer_id">' + farmerOptionsWith(row.farmer_id) + '</select>') +
     fld("Banana type", '<select name="banana_type">' + bananaOptionsWith(row.banana_type) + '</select>') +
-    fld("Bunches", '<input name="bunches" type="number" min="0" step="0.01" value="' + esc(row.bunches) + '">') +
-    fld("Weight kg", '<input name="weight_kg" type="number" min="0" step="0.01" value="' + esc(row.weight_kg) + '" required>') +
+    fld("Grade", '<select name="grade">' + gradeOptionsWith(row.grade) + '</select>') +
+    fld("Bunches / units", '<input name="bunches" type="number" min="0" step="0.01" value="' + esc(row.bunches) + '">') +
+    fld("Gross weight kg", '<input name="gross_weight_kg" type="number" min="0" step="0.01" value="' + esc(gross) + '" required>') +
+    fld("Stem reduction / unit", '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" value="' + esc(row.stem_reduction_per_unit || 0) + '">') +
     fld("Rate / kg", '<input name="rate" type="number" min="0" step="0.01" value="' + esc(row.rate) + '" required>') +
     fld("Vehicle", '<select name="vehicle_no">' + vehicleOptionsWith(row.vehicle_no) + '</select>') +
     fld("Trip", '<select name="trip_id">' + tripOptionsWith(row.trip_id) + '</select>') +
     '</div>' + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/purchases/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Purchase updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/purchases/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Purchase updated"); await load(); }); };
 }
 function editSale(row) {
-  openModal("Edit sale", '<form id="mForm" class="sectiongap"><div class="formgrid two">' +
+  const gross = row.gross_weight_kg || row.weight_kg;
+  openModal("Edit sale", '<form id="mForm" class="sectiongap"><div class="formgrid">' +
     fld("Date", '<input name="sale_date" type="date" value="' + esc(row.sale_date) + '" required>') +
     fld("Vendor", '<select name="vendor_id">' + vendorOptionsWith(row.vendor_id) + '</select>') +
     fld("Banana type", '<select name="banana_type">' + bananaOptionsWith(row.banana_type) + '</select>') +
-    fld("Weight kg", '<input name="weight_kg" type="number" min="0" step="0.01" value="' + esc(row.weight_kg) + '" required>') +
+    fld("Grade", '<select name="grade">' + gradeOptionsWith(row.grade) + '</select>') +
+    fld("Bunches / units", '<input name="bunches" type="number" min="0" step="0.01" value="' + esc(row.bunches) + '">') +
+    fld("Gross weight kg", '<input name="gross_weight_kg" type="number" min="0" step="0.01" value="' + esc(gross) + '" required>') +
+    fld("Stem reduction / unit", '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" value="' + esc(row.stem_reduction_per_unit || 0) + '">') +
     fld("Rate / kg", '<input name="rate" type="number" min="0" step="0.01" value="' + esc(row.rate) + '" required>') +
     fld("Paid", '<input name="paid" type="number" min="0" step="0.01" value="' + esc(row.paid) + '">') +
     fld("Vehicle", '<select name="vehicle_no">' + vehicleOptionsWith(row.vehicle_no) + '</select>') +
     fld("Trip", '<select name="trip_id">' + tripOptionsWith(row.trip_id) + '</select>') +
     '</div>' + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/sales/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Sale updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/sales/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Sale updated"); await load(); }); };
 }
 async function viewTrip(id) {
   const data = await api("/api/trip-detail?id=" + id);
@@ -444,8 +474,64 @@ async function viewTrip(id) {
     '<h3 style="margin:14px 0 6px">Purchases on this trip</h3>' + table(["Farmer","Type","Kg","Value"], data.purchases.map(x => [x.farmer_name, x.banana_type, kg(x.weight_kg), rs(x.weight_kg*x.rate)])) +
     '<h3 style="margin:14px 0 6px">Sales on this trip</h3>' + table(["Vendor","Type","Kg","Value"], data.sales.map(x => [x.vendor_name, x.banana_type, kg(x.weight_kg), rs(x.weight_kg*x.rate)]));
   openModal("Trip - " + data.trip.vehicle_no + " (" + data.trip.trip_date + ")", body);
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/trip-expenses", Object.assign({ trip_id: id }, formData(e.target))); showToast("Expense added"); await viewTrip(id); await load(); };
-  $("modalBody").onclick = async e => { if (e.target.dataset.delExpense) { await api("/api/trip-expenses/delete", { id: Number(e.target.dataset.delExpense) }); await viewTrip(id); await load(); } };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/trip-expenses", Object.assign({ trip_id: id }, formData(e.target))); showToast("Expense added"); await viewTrip(id); await load(); }); };
+  $("modalBody").onclick = e => { if (e.target.dataset.delExpense) guarded(async () => { await api("/api/trip-expenses/delete", { id: Number(e.target.dataset.delExpense) }); await viewTrip(id); await load(); }); };
+}
+
+async function viewCutterBatch(id) {
+  const data = await api("/api/cutter/batch-detail?id=" + id);
+  const batch = data.batch;
+  const entries = data.entries;
+  const pending = batch.status === "pending";
+  const totalNet = entries.reduce((a, en) => a + en.net_weight_kg, 0);
+  let body = '<p class="subcopy">Status: <span class="pill ' + (batch.status === "pending" ? "warn" : batch.status === "rejected" ? "bad" : "") + '">' + esc(batch.status) + '</span> | Total net: ' + kg(totalNet) + '</p>';
+  if (pending) {
+    body += '<form id="batchHeaderForm" class="formgrid" style="margin:10px 0">' +
+      '<input name="batch_date" type="date" value="' + esc(batch.batch_date) + '" required>' +
+      '<select name="farmer_id">' + farmerOptionsWith(batch.farmer_id) + '</select>' +
+      '<select name="banana_type">' + bananaOptionsWith(batch.banana_type) + '</select>' +
+      '<select name="vehicle_no">' + vehicleOptionsWith(batch.vehicle_no) + '</select>' +
+      '<button class="secondary">Save batch details</button></form>';
+  } else {
+    body += '<p class="subcopy">' + esc(batch.batch_date) + ' | ' + esc(batch.farmer_name) + ' | ' + esc(batch.banana_type) + ' | ' + esc(batch.vehicle_no) + '</p>';
+  }
+  const lineHeaders = ["Gross kg","Units","Stem/unit","Grade","Net kg","Notes"].concat(pending ? ["Action"] : []);
+  body += '<h3 style="margin:14px 0 6px">Weight lines</h3>' + table(lineHeaders, entries.map(en => {
+    const row = [kg(en.gross_weight_kg), en.units, en.stem_reduction_per_unit, en.grade, kg(en.net_weight_kg), en.notes];
+    if (pending) row.push(raw('<button type="button" class="secondary small" data-edit-entry="' + en.id + '">Edit</button> <button type="button" class="danger small" data-del-entry="' + en.id + '">Delete</button>'));
+    return row;
+  }));
+  if (pending) {
+    body += '<form id="addEntryForm" class="formgrid" style="margin-top:10px">' +
+      '<input name="gross_weight_kg" type="number" min="0" step="0.01" placeholder="Gross weight kg" required>' +
+      '<input name="units" type="number" min="0" step="1" placeholder="Units" required>' +
+      '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" placeholder="Stem reduction / unit">' +
+      '<select name="grade">' + gradeOptions() + '</select>' +
+      '<input name="notes" placeholder="Notes">' +
+      '<button>Add line</button></form>';
+    body += '<div class="actions" style="margin-top:14px"><button type="button" id="batchApprove">Approve batch</button><button type="button" class="danger" id="batchReject">Reject batch</button></div>';
+  }
+  openModal("Cutter batch #" + batch.id, body);
+  if (pending) {
+    $("batchHeaderForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/cutter/batch/update", Object.assign({ id: batch.id }, formData(e.target))); showToast("Batch updated"); await viewCutterBatch(id); await load(); }); };
+    $("addEntryForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/cutter/entry/add", Object.assign({ batch_id: batch.id }, formData(e.target))); showToast("Line added"); await viewCutterBatch(id); await load(); }); };
+    $("modalBody").onclick = e => {
+      if (e.target.dataset.editEntry) editCutterEntry(entries.find(x => x.id === Number(e.target.dataset.editEntry)), id);
+      if (e.target.dataset.delEntry && confirm("Remove this weight line?")) guarded(async () => { await api("/api/cutter/entry/delete", { id: Number(e.target.dataset.delEntry) }); showToast("Line removed"); await viewCutterBatch(id); await load(); });
+    };
+    $("batchApprove").onclick = () => guarded(async () => { await api("/api/cutter/approve", { id: batch.id }); closeModal(); showToast("Batch approved as purchase"); await load(); });
+    $("batchReject").onclick = () => { if (confirm("Reject this batch?")) guarded(async () => { await api("/api/cutter/reject", { id: batch.id }); closeModal(); showToast("Batch rejected"); await load(); }); };
+  }
+}
+function editCutterEntry(entry, batchId) {
+  openModal("Edit weight line", '<form id="mForm" class="sectiongap"><div class="formgrid">' +
+    fld("Gross weight kg", '<input name="gross_weight_kg" type="number" min="0" step="0.01" value="' + esc(entry.gross_weight_kg) + '" required>') +
+    fld("Units", '<input name="units" type="number" min="0" step="1" value="' + esc(entry.units) + '" required>') +
+    fld("Stem reduction / unit", '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" value="' + esc(entry.stem_reduction_per_unit) + '">') +
+    fld("Grade", '<select name="grade">' + gradeOptionsWith(entry.grade) + '</select>') +
+    '</div>' + fld("Notes", '<textarea name="notes">' + esc(entry.notes) + '</textarea>') +
+    '<button>Save line</button></form>');
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/cutter/entry/update", Object.assign({ id: entry.id }, formData(e.target))); showToast("Line updated"); await viewCutterBatch(batchId); await load(); }); };
 }
 
 function render() {
@@ -457,12 +543,10 @@ function render() {
   const paid = dailySales.reduce((a,x) => a + x.paid, 0);
   const inKg = dailyPurchases.reduce((a,x) => a + x.weight_kg, 0);
   $("mPurchase").textContent = rs(pv); $("mSales").textContent = rs(sv); $("mMargin").textContent = rs(sv - pv); $("mPending").textContent = rs(sv - paid); $("mStock").textContent = kg(inKg - dailySales.reduce((a,x)=>a+x.weight_kg,0));
-  $("rateCards").innerHTML = BANANAS.map(b => {
-    const r = state.rates.find(x => x.rate_date === d && x.banana_type === b);
-    const week = state.rates.filter(x => x.banana_type === b).map(x => x.sell_rate);
-    const avg = week.reduce((a,n) => a + Number(n), 0) / (week.length || 1);
-    return '<article class="rate"><h3>' + b + '</h3><strong>' + (r ? rs(r.sell_rate) : "No rate") + '</strong><span>Buy ' + (r ? rs(r.buy_rate) : "-") + '</span><small>7-day avg sell ' + rs(avg) + '</small></article>';
-  }).join("");
+  $("rateCards").innerHTML = table(["Banana type","Grade","Buy rate","Sell rate"], BANANAS.flatMap(b => GRADES.map(g => {
+    const r = state.rates.find(x => x.rate_date === d && x.banana_type === b && x.grade === g);
+    return [b, g, r ? rs(r.buy_rate) : "—", r ? rs(r.sell_rate) : "—"];
+  })));
   document.querySelectorAll('select[name="farmer_id"]').forEach(s => s.innerHTML = options(state.farmers, "farmer"));
   const vendorSelect = document.querySelector('#saleForm select[name="vendor_id"]');
   if (vendorSelect) vendorSelect.innerHTML = options(state.vendors, "vendor");
@@ -496,11 +580,11 @@ function render() {
   $("cutterLog").innerHTML = table(["Date","Farmer","Banana","Vehicle","Lines","Net kg","Status","Action"], state.cutterBatches.map(x => [
     x.batch_date, x.farmer_name, x.banana_type, x.vehicle_no, x.entry_count, kg(x.total_net_kg),
     raw('<span class="pill ' + (x.status === 'pending' ? 'warn' : x.status === 'rejected' ? 'bad' : '') + '">' + esc(x.status) + '</span>'),
-    raw(x.status === "pending" ? '<button type="button" data-approve-batch="' + x.id + '">Approve</button> <button type="button" class="danger" data-reject-batch="' + x.id + '">Reject</button>' : '-')
+    raw('<div class="actions"><button type="button" class="secondary small" data-view-batch="' + x.id + '">View</button>' + (x.status === "pending" ? ' <button type="button" class="small" data-approve-batch="' + x.id + '">Approve</button> <button type="button" class="danger small" data-reject-batch="' + x.id + '">Reject</button>' : '') + '</div>')
   ]));
-  $("transactionTables").innerHTML = "<h3>Purchases</h3>" + table(["Date","Farmer","Type","Bunches","Kg","Rate","Value","Vehicle","Actions"], dailyPurchases.map(x => [x.purchase_date,x.farmer_name,x.banana_type,x.bunches,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),x.vehicle_no,
+  $("transactionTables").innerHTML = "<h3>Purchases</h3>" + table(["Date","Farmer","Type","Grade","Bunches","Kg","Rate","Value","Vehicle","Actions"], dailyPurchases.map(x => [x.purchase_date,x.farmer_name,x.banana_type,x.grade,x.bunches,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),x.vehicle_no,
     raw('<div class="actions"><button type="button" class="secondary small" data-edit-purchase="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-purchase="' + x.id + '">Delete</button></div>')]))
-    + "<h3>Sales</h3>" + table(["Date","Vendor","Type","Kg","Rate","Value","Paid","Vehicle","Actions"], dailySales.map(x => [x.sale_date,x.vendor_name,x.banana_type,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),rs(x.paid),x.vehicle_no,
+    + "<h3>Sales</h3>" + table(["Date","Vendor","Type","Grade","Kg","Rate","Value","Paid","Vehicle","Actions"], dailySales.map(x => [x.sale_date,x.vendor_name,x.banana_type,x.grade,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),rs(x.paid),x.vehicle_no,
     raw('<div class="actions"><button type="button" class="secondary small" data-edit-sale="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-sale="' + x.id + '">Delete</button></div>')]));
   $("invoiceTable").innerHTML = table(["No","Party","Period","Total","Pending","Status","Action"], state.invoices.map(x => [x.invoice_no,x.party_name,x.from_date + " to " + x.to_date,rs(x.total),rs(x.pending),raw('<span class="pill ' + (x.status === 'void' ? 'bad' : x.pending > 0 ? 'warn' : '') + '">' + esc(x.status) + '</span>'),raw('<a class="btn secondary small" href="/invoice/' + x.id + '" target="_blank">Print</a>' + (state.me && state.me.role === "owner" && x.status !== "void" ? ' <button type="button" class="danger small" data-void-invoice="' + x.id + '">Void</button>' : ''))]));
   $("dailyReport").value = dailyText();
@@ -526,7 +610,14 @@ function render() {
 }
 
 function formData(form) { return Object.fromEntries(new FormData(form).entries()); }
-async function save(path, form, extra) { await api(path, Object.assign(formData(form), extra || {})); form.reset(); showToast("Saved successfully"); await load(); }
+async function save(path, form, extra) {
+  await guarded(async () => {
+    await api(path, Object.assign(formData(form), extra || {}));
+    form.reset();
+    showToast("Saved successfully");
+    await load();
+  });
+}
 $("farmerForm").onsubmit = e => { e.preventDefault(); save("/api/farmers", e.target); };
 $("vendorForm").onsubmit = e => { e.preventDefault(); save("/api/vendors", e.target); };
 $("vehicleForm").onsubmit = e => { e.preventDefault(); save("/api/vehicles", e.target); };
@@ -548,53 +639,57 @@ $("cutLines").onclick = e => {
     renderCutLines();
   }
 };
-$("cutterForm").onsubmit = async e => {
+$("cutterForm").onsubmit = e => {
   e.preventDefault();
   if (!cutLines.length) { showToast("Add at least one weight line"); return; }
-  await api("/api/cutter/submit", Object.assign(formData(e.target), { batch_date: $("bizDate").value, entries: cutLines }));
-  cutLines = [];
-  e.target.reset();
-  renderCutLines();
-  showToast("Cutter batch submitted");
-  await load();
+  guarded(async () => {
+    await api("/api/cutter/submit", Object.assign(formData(e.target), { batch_date: $("bizDate").value, entries: cutLines }));
+    cutLines = [];
+    e.target.reset();
+    renderCutLines();
+    showToast("Cutter batch submitted");
+    await load();
+  });
 };
-$("cutterLog").onclick = async e => {
-  if (e.target.dataset.approveBatch) { await api("/api/cutter/approve", { id: Number(e.target.dataset.approveBatch) }); showToast("Batch approved as purchase"); await load(); }
-  if (e.target.dataset.rejectBatch) { await api("/api/cutter/reject", { id: Number(e.target.dataset.rejectBatch) }); showToast("Batch rejected"); await load(); }
+$("cutterLog").onclick = e => {
+  const t = e.target.dataset;
+  if (t.viewBatch) viewCutterBatch(Number(t.viewBatch));
+  if (t.approveBatch) guarded(async () => { await api("/api/cutter/approve", { id: Number(t.approveBatch) }); showToast("Batch approved as purchase"); await load(); });
+  if (t.rejectBatch) guarded(async () => { await api("/api/cutter/reject", { id: Number(t.rejectBatch) }); showToast("Batch rejected"); await load(); });
 };
-$("farmersTable").onclick = async e => {
+$("farmersTable").onclick = e => {
   const t = e.target.dataset;
   if (t.editFarmer) editFarmer(state.farmers.find(x => x.id === Number(t.editFarmer)));
   if (t.payFarmer) payFarmer(state.farmers.find(x => x.id === Number(t.payFarmer)));
   if (t.ledgerFarmer) viewLedger(state.farmers.find(x => x.id === Number(t.ledgerFarmer)));
-  if (t.delFarmer && confirm("Delete this farmer? Historical purchases stay on record.")) { await api("/api/farmers/delete", { id: Number(t.delFarmer) }); showToast("Farmer deleted"); await load(); }
+  if (t.delFarmer && confirm("Delete this farmer? Historical purchases stay on record.")) guarded(async () => { await api("/api/farmers/delete", { id: Number(t.delFarmer) }); showToast("Farmer deleted"); await load(); });
 };
-$("vendorsTable").onclick = async e => {
+$("vendorsTable").onclick = e => {
   const t = e.target.dataset;
   if (t.editVendor) editVendor(state.vendors.find(x => x.id === Number(t.editVendor)));
-  if (t.delVendor && confirm("Delete this vendor? Historical sales stay on record.")) { await api("/api/vendors/delete", { id: Number(t.delVendor) }); showToast("Vendor deleted"); await load(); }
+  if (t.delVendor && confirm("Delete this vendor? Historical sales stay on record.")) guarded(async () => { await api("/api/vendors/delete", { id: Number(t.delVendor) }); showToast("Vendor deleted"); await load(); });
 };
-$("vehiclesTable").onclick = async e => {
-  if (e.target.dataset.delVehicle && confirm("Remove this vehicle?")) { await api("/api/vehicles/delete", { id: Number(e.target.dataset.delVehicle) }); showToast("Vehicle removed"); await load(); }
+$("vehiclesTable").onclick = e => {
+  if (e.target.dataset.delVehicle && confirm("Remove this vehicle?")) guarded(async () => { await api("/api/vehicles/delete", { id: Number(e.target.dataset.delVehicle) }); showToast("Vehicle removed"); await load(); });
 };
-$("transactionTables").onclick = async e => {
+$("transactionTables").onclick = e => {
   const t = e.target.dataset;
   if (t.editPurchase) editPurchase(state.purchases.find(x => x.id === Number(t.editPurchase)));
   if (t.editSale) editSale(state.sales.find(x => x.id === Number(t.editSale)));
-  if (t.delPurchase && confirm("Delete this purchase entry?")) { await api("/api/purchases/delete", { id: Number(t.delPurchase) }); showToast("Purchase deleted"); await load(); }
-  if (t.delSale && confirm("Delete this sale entry?")) { await api("/api/sales/delete", { id: Number(t.delSale) }); showToast("Sale deleted"); await load(); }
+  if (t.delPurchase && confirm("Delete this purchase entry?")) guarded(async () => { await api("/api/purchases/delete", { id: Number(t.delPurchase) }); showToast("Purchase deleted"); await load(); });
+  if (t.delSale && confirm("Delete this sale entry?")) guarded(async () => { await api("/api/sales/delete", { id: Number(t.delSale) }); showToast("Sale deleted"); await load(); });
 };
-$("tripsTable").onclick = async e => {
+$("tripsTable").onclick = e => {
   const t = e.target.dataset;
   if (t.viewTrip) viewTrip(Number(t.viewTrip));
-  if (t.settleTrip) { await api("/api/trips/settle", { id: Number(t.settleTrip) }); showToast("Trip settled"); await load(); }
-  if (t.delTrip && confirm("Delete this trip? Linked entries stay on record.")) { await api("/api/trips/delete", { id: Number(t.delTrip) }); showToast("Trip deleted"); await load(); }
+  if (t.settleTrip) guarded(async () => { await api("/api/trips/settle", { id: Number(t.settleTrip) }); showToast("Trip settled"); await load(); });
+  if (t.delTrip && confirm("Delete this trip? Linked entries stay on record.")) guarded(async () => { await api("/api/trips/delete", { id: Number(t.delTrip) }); showToast("Trip deleted"); await load(); });
 };
-$("invoiceTable").onclick = async e => {
-  if (e.target.dataset.voidInvoice && confirm("Void this invoice?")) { await api("/api/invoices/void", { id: Number(e.target.dataset.voidInvoice) }); showToast("Invoice voided"); await load(); }
+$("invoiceTable").onclick = e => {
+  if (e.target.dataset.voidInvoice && confirm("Void this invoice?")) guarded(async () => { await api("/api/invoices/void", { id: Number(e.target.dataset.voidInvoice) }); showToast("Invoice voided"); await load(); });
 };
-$("staffTable").onclick = async e => {
-  if (e.target.dataset.toggleStaff) { await api("/api/staff/toggle", { id: Number(e.target.dataset.toggleStaff), active: e.target.dataset.active !== "1" }); showToast("Staff updated"); await load(); }
+$("staffTable").onclick = e => {
+  if (e.target.dataset.toggleStaff) guarded(async () => { await api("/api/staff/toggle", { id: Number(e.target.dataset.toggleStaff), active: e.target.dataset.active !== "1" }); showToast("Staff updated"); await load(); });
 };
 $("activityTable").onclick = e => {
   if (e.target.dataset.viewAudit) {
@@ -604,9 +699,9 @@ $("activityTable").onclick = e => {
 };
 $("invoiceForm").party_type.onchange = e => { document.querySelector('#invoiceForm select[name="party_id"]').innerHTML = options(e.target.value === "vendor" ? state.vendors : state.farmers, "party"); };
 $("invoiceForm").from_date.value = todayStr.slice(0,8) + "01"; $("invoiceForm").to_date.value = todayStr;
-$("invoiceForm").onsubmit = async e => { e.preventDefault(); const out = await api("/api/invoices/generate", formData(e.target)); showToast("Invoice generated"); window.open("/invoice/" + out.id, "_blank"); await load(); };
-$("emailForm").onsubmit = async e => { e.preventDefault(); await api("/api/settings", formData(e.target)); $("emailStatus").textContent = "Settings saved."; showToast("Email settings saved"); await load(); };
-$("sendDaily").onclick = async () => { const out = await api("/api/email/send-daily", { report_date: $("bizDate").value }); $("emailStatus").textContent = out.message; showToast("Daily report logged"); await load(); };
+$("invoiceForm").onsubmit = e => { e.preventDefault(); guarded(async () => { const out = await api("/api/invoices/generate", formData(e.target)); showToast("Invoice generated"); window.open("/invoice/" + out.id, "_blank"); await load(); }); };
+$("emailForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/settings", formData(e.target)); $("emailStatus").textContent = "Settings saved."; showToast("Email settings saved"); await load(); }); };
+$("sendDaily").onclick = () => guarded(async () => { const out = await api("/api/email/send-daily", { report_date: $("bizDate").value }); $("emailStatus").textContent = out.message; showToast("Daily report logged"); await load(); });
 $("refresh").onclick = load; $("bizDate").onchange = load; $("month").onchange = load;
 $("copyReport").onclick = async () => { await navigator.clipboard.writeText($("dailyReport").value); $("copyReport").textContent = "Copied"; showToast("Report copied"); setTimeout(() => $("copyReport").textContent = "Copy report", 1200); };
 $("printReport").onclick = () => { const w = window.open("", "_blank"); w.document.write("<pre>" + esc($("dailyReport").value) + "</pre>"); w.print(); };
@@ -636,8 +731,10 @@ function csvParse(text) {
   for (let i=0;i<text.length;i++) { const c=text[i], n=text[i+1]; if(c==='"'&&q&&n==='"'){cell+='"';i++;} else if(c==='"'){q=!q;} else if(c===","&&!q){row.push(cell);cell="";} else if((c==="\\n"||c==="\\r")&&!q){ if(c==="\\r"&&n==="\\n") i++; row.push(cell); if(row.some(v=>v.trim())) rows.push(row); row=[]; cell=""; } else cell+=c; }
   row.push(cell); if(row.some(v=>v.trim())) rows.push(row); const head = rows.shift().map(h => h.trim()); return rows.map(r => Object.fromEntries(head.map((h,i) => [h, r[i] || ""])));
 }
-$("importForm").onsubmit = async e => { e.preventDefault(); const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; showToast("Import complete"); e.target.reset(); await load(); };
+$("importForm").onsubmit = e => { e.preventDefault(); guarded(async () => { const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; showToast("Import complete"); e.target.reset(); await load(); }); };
 document.querySelectorAll("[data-export]").forEach(b => b.onclick = () => { location.href = "/api/export?type=" + b.dataset.export + "&month=" + $("month").value; });
+wireRateAutofill("purchaseForm", "buy_rate");
+wireRateAutofill("saleForm", "sell_rate");
 initAuth().catch(err => { $("authStatus").textContent = err.message; });
 `;
 var BODY = `
@@ -709,10 +806,11 @@ var BODY = `
     <section id="dashboard" class="view active">
       <div class="grid three">
         <div class="panel wide">
-          <div class="heading"><div><p class="eyebrow">Daily rates</p><h2>Rate board and 7-day averages</h2><p class="subcopy">Set the buy and sell rates used by the counter team for the selected business date.</p></div></div>
-          <div class="rates" id="rateCards"></div>
-          <form class="formgrid four" id="rateForm">
+          <div class="heading"><div><p class="eyebrow">Daily rates</p><h2>Rate board by grade</h2><p class="subcopy">Set the buy and sell rates for the selected business date. 1st/2nd/3rd grade each carry their own price.</p></div></div>
+          <div id="rateCards"></div>
+          <form class="formgrid five" id="rateForm">
             <select name="banana_type"></select>
+            <select name="grade"></select>
             <input name="buy_rate" type="number" min="0" step="0.01" placeholder="Buy rate / kg" required>
             <input name="sell_rate" type="number" min="0" step="0.01" placeholder="Sell rate / kg" required>
             <button>Save rate</button>
@@ -792,20 +890,20 @@ var BODY = `
     <section id="transactions" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Inbound</p><h2>Purchase from farmer</h2><p class="subcopy">Record vehicle loads as they arrive from farms. Attach a trip if you're tracking that vehicle's costs.</p></div></div>
-          <form class="formgrid two" id="purchaseForm">
-            <select name="farmer_id" required></select><select name="banana_type"></select>
-            <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches"><input name="weight_kg" type="number" min="0" step="0.01" placeholder="Weight kg" required>
-            <input name="rate" type="number" min="0" step="0.01" placeholder="Rate / kg" required><select name="vehicle_no" required></select>
-            <select name="trip_id"></select><textarea name="notes" placeholder="Notes"></textarea><button>Save purchase</button>
+          <div class="heading"><div><p class="eyebrow">Inbound</p><h2>Purchase from farmer</h2><p class="subcopy">Enter the gross scale weight and grade; stem reduction per unit is subtracted automatically to get the billable net weight. Attach a trip if you're tracking that vehicle's costs.</p></div></div>
+          <form class="formgrid" id="purchaseForm">
+            <select name="farmer_id" required></select><select name="banana_type"></select><select name="grade"></select>
+            <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches / units"><input name="gross_weight_kg" type="number" min="0" step="0.01" placeholder="Gross weight kg" required><input name="stem_reduction_per_unit" type="number" min="0" step="0.01" placeholder="Stem reduction / unit">
+            <input name="rate" type="number" min="0" step="0.01" placeholder="Rate / kg" required><select name="vehicle_no" required></select><select name="trip_id"></select>
+            <textarea name="notes" placeholder="Notes"></textarea><button>Save purchase</button>
           </form>
         </div>
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Outbound</p><h2>Sale to vendor</h2><p class="subcopy">Capture dispatch weight, sale rate, payment, and vehicle number.</p></div></div>
-          <form class="formgrid two" id="saleForm">
-            <select name="vendor_id" required></select><select name="banana_type"></select>
-            <input name="weight_kg" type="number" min="0" step="0.01" placeholder="Weight kg" required><input name="rate" type="number" min="0" step="0.01" placeholder="Sale rate / kg" required>
-            <input name="paid" type="number" min="0" step="0.01" placeholder="Amount paid"><select name="vehicle_no" required></select>
+          <div class="heading"><div><p class="eyebrow">Outbound</p><h2>Sale to vendor</h2><p class="subcopy">Same grade and stem-reduction fields as purchases, plus dispatch weight, sale rate, payment, and vehicle number.</p></div></div>
+          <form class="formgrid" id="saleForm">
+            <select name="vendor_id" required></select><select name="banana_type"></select><select name="grade"></select>
+            <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches / units"><input name="gross_weight_kg" type="number" min="0" step="0.01" placeholder="Gross weight kg" required><input name="stem_reduction_per_unit" type="number" min="0" step="0.01" placeholder="Stem reduction / unit">
+            <input name="rate" type="number" min="0" step="0.01" placeholder="Sale rate / kg" required><input name="paid" type="number" min="0" step="0.01" placeholder="Amount paid"><select name="vehicle_no" required></select>
             <select name="trip_id"></select><textarea name="notes" placeholder="Notes"></textarea><button>Save sale</button>
           </form>
         </div>
@@ -961,7 +1059,7 @@ async function generateInvoice(db, input, changedBy) {
 	const partyId = Number(input.party_id);
 	const fromDate = String(input.from_date);
 	const toDate = String(input.to_date);
-	const rows = partyType === "vendor" ? await all(db, "SELECT id, sale_date AS item_date, banana_type, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE vendor_id = ? AND sale_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY sale_date, id", partyId, fromDate, toDate) : await all(db, "SELECT id, purchase_date AS item_date, banana_type, weight_kg, rate, bunches, vehicle_no, notes, 0 AS paid FROM purchases WHERE farmer_id = ? AND purchase_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY purchase_date, id", partyId, fromDate, toDate);
+	const rows = partyType === "vendor" ? await all(db, "SELECT id, sale_date AS item_date, banana_type, grade, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE vendor_id = ? AND sale_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY sale_date, id", partyId, fromDate, toDate) : await all(db, "SELECT id, purchase_date AS item_date, banana_type, grade, weight_kg, rate, bunches, vehicle_no, notes, 0 AS paid FROM purchases WHERE farmer_id = ? AND purchase_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY purchase_date, id", partyId, fromDate, toDate);
 	const party = partyType === "vendor" ? await db.prepare("SELECT name FROM vendors WHERE id = ?").bind(partyId).first() : await db.prepare("SELECT name FROM farmers WHERE id = ?").bind(partyId).first();
 	const total = rows.reduce((sum, row) => sum + Number(row.weight_kg) * Number(row.rate), 0);
 	const paid = partyType === "vendor" ? rows.reduce((sum, row) => sum + Number(row.paid || 0), 0) : Number((await db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM farmer_payments WHERE farmer_id = ? AND payment_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL)").bind(partyId, fromDate, toDate).first())?.total || 0);
@@ -971,7 +1069,7 @@ async function generateInvoice(db, input, changedBy) {
 	for (const row of rows) {
 		const amount = Number(row.weight_kg) * Number(row.rate);
 		const descriptionParts = [
-			row.banana_type,
+			`${row.banana_type} (${row.grade})`,
 			row.vehicle_no ? `Vehicle ${row.vehicle_no}` : "",
 			partyType === "farmer" && row.bunches ? `Units ${row.bunches}` : "",
 			row.notes || ""
@@ -1004,18 +1102,18 @@ async function logoDataUrl(env) {
 }
 async function invoiceLineDescription(db, item) {
 	if (item.item_type === "purchase") {
-		const source = await db.prepare("SELECT banana_type, bunches, weight_kg, rate, vehicle_no, notes FROM purchases WHERE id = ?").bind(Number(item.source_id)).first();
+		const source = await db.prepare("SELECT banana_type, grade, bunches, weight_kg, rate, vehicle_no, notes FROM purchases WHERE id = ?").bind(Number(item.source_id)).first();
 		if (source) return [
-			source.banana_type,
+			`${source.banana_type} (${source.grade})`,
 			source.vehicle_no ? `Vehicle ${source.vehicle_no}` : "",
 			source.bunches ? `Units ${source.bunches}` : "",
 			source.notes || ""
 		].filter(Boolean).join(" | ");
 	}
 	if (item.item_type === "sale") {
-		const source = await db.prepare("SELECT banana_type, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE id = ?").bind(Number(item.source_id)).first();
+		const source = await db.prepare("SELECT banana_type, grade, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE id = ?").bind(Number(item.source_id)).first();
 		if (source) return [
-			source.banana_type,
+			`${source.banana_type} (${source.grade})`,
 			source.vehicle_no ? `Vehicle ${source.vehicle_no}` : "",
 			source.notes || ""
 		].filter(Boolean).join(" | ");
@@ -1092,8 +1190,9 @@ async function deleteVehicle(db, id, changedBy) {
 	await writeAudit(db, "vehicle", id, "delete", changedBy, before, null);
 }
 async function createRate(db, input, changedBy) {
-	const before = await db.prepare("SELECT * FROM banana_rates WHERE rate_date = ? AND banana_type = ?").bind(input.rate_date, input.banana_type).first();
-	await db.prepare("INSERT INTO banana_rates (rate_date, banana_type, buy_rate, sell_rate) VALUES (?, ?, ?, ?) ON CONFLICT(rate_date, banana_type) DO UPDATE SET buy_rate = excluded.buy_rate, sell_rate = excluded.sell_rate").bind(input.rate_date, input.banana_type, Number(input.buy_rate), Number(input.sell_rate)).run();
+	const grade = String(input.grade || "1st grade");
+	const before = await db.prepare("SELECT * FROM banana_rates WHERE rate_date = ? AND banana_type = ? AND grade = ?").bind(input.rate_date, input.banana_type, grade).first();
+	await db.prepare("INSERT INTO banana_rates (rate_date, banana_type, grade, buy_rate, sell_rate) VALUES (?, ?, ?, ?, ?) ON CONFLICT(rate_date, banana_type, grade) DO UPDATE SET buy_rate = excluded.buy_rate, sell_rate = excluded.sell_rate").bind(input.rate_date, input.banana_type, grade, Number(input.buy_rate), Number(input.sell_rate)).run();
 	await writeAudit(db, "banana_rate", 0, before ? "update" : "create", changedBy, before, input);
 }
 //#endregion
@@ -1118,14 +1217,28 @@ async function deleteFarmerPayment(db, id, changedBy) {
 }
 //#endregion
 //#region worker/purchases.ts
+function purchaseFields(input) {
+	const bunches = Number(input.bunches || 0);
+	const stemReductionPerUnit = Number(input.stem_reduction_per_unit || 0);
+	const grossWeightKg = Number(input.gross_weight_kg || input.weight_kg || 0);
+	return {
+		bunches,
+		stemReductionPerUnit,
+		grossWeightKg,
+		weightKg: netWeight(grossWeightKg, bunches, stemReductionPerUnit),
+		grade: String(input.grade || "1st grade")
+	};
+}
 async function createPurchase(db, input, changedBy) {
 	const farmer = await db.prepare("SELECT name FROM farmers WHERE id = ?").bind(Number(input.farmer_id)).first();
-	await writeAudit(db, "purchase", (await db.prepare("INSERT INTO purchases (purchase_date, farmer_id, farmer_name, banana_type, bunches, weight_kg, rate, vehicle_no, notes, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(input.purchase_date, Number(input.farmer_id), farmer?.name || "Unknown farmer", input.banana_type, Number(input.bunches || 0), Number(input.weight_kg), Number(input.rate), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null).run()).meta.last_row_id, "create", changedBy, null, input);
+	const f = purchaseFields(input);
+	await writeAudit(db, "purchase", (await db.prepare("INSERT INTO purchases (purchase_date, farmer_id, farmer_name, banana_type, grade, bunches, gross_weight_kg, stem_reduction_per_unit, weight_kg, rate, vehicle_no, notes, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(input.purchase_date, Number(input.farmer_id), farmer?.name || "Unknown farmer", input.banana_type, f.grade, f.bunches, f.grossWeightKg, f.stemReductionPerUnit, f.weightKg, Number(input.rate), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null).run()).meta.last_row_id, "create", changedBy, null, input);
 }
 async function updatePurchase(db, id, input, changedBy) {
 	const before = await db.prepare("SELECT * FROM purchases WHERE id = ?").bind(id).first();
 	const farmer = await db.prepare("SELECT name FROM farmers WHERE id = ?").bind(Number(input.farmer_id)).first();
-	await db.prepare("UPDATE purchases SET purchase_date = ?, farmer_id = ?, farmer_name = ?, banana_type = ?, bunches = ?, weight_kg = ?, rate = ?, vehicle_no = ?, notes = ?, trip_id = ? WHERE id = ?").bind(input.purchase_date, Number(input.farmer_id), farmer?.name || "Unknown farmer", input.banana_type, Number(input.bunches || 0), Number(input.weight_kg), Number(input.rate), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null, id).run();
+	const f = purchaseFields(input);
+	await db.prepare("UPDATE purchases SET purchase_date = ?, farmer_id = ?, farmer_name = ?, banana_type = ?, grade = ?, bunches = ?, gross_weight_kg = ?, stem_reduction_per_unit = ?, weight_kg = ?, rate = ?, vehicle_no = ?, notes = ?, trip_id = ? WHERE id = ?").bind(input.purchase_date, Number(input.farmer_id), farmer?.name || "Unknown farmer", input.banana_type, f.grade, f.bunches, f.grossWeightKg, f.stemReductionPerUnit, f.weightKg, Number(input.rate), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null, id).run();
 	await writeAudit(db, "purchase", id, "update", changedBy, before, input);
 }
 async function deletePurchase(db, id, changedBy) {
@@ -1133,29 +1246,75 @@ async function deletePurchase(db, id, changedBy) {
 	await db.prepare("UPDATE purchases SET deleted_at = ? WHERE id = ?").bind((/* @__PURE__ */ new Date()).toISOString(), id).run();
 	await writeAudit(db, "purchase", id, "delete", changedBy, before, null);
 }
-function netWeight(entry) {
-	return Math.max(0, Number(entry.weight_kg || 0) - Number(entry.units || 0) * Number(entry.stem_reduction_per_unit || 0));
-}
 async function submitCutterBatch(db, input, changedBy) {
 	const farmerName = (await db.prepare("SELECT name FROM farmers WHERE id = ?").bind(Number(input.farmer_id)).first())?.name || "Unknown farmer";
 	const batchId = (await db.prepare("INSERT INTO cutter_batches (batch_date, farmer_id, farmer_name, banana_type, vehicle_no, submitted_by, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')").bind(input.batch_date, Number(input.farmer_id), farmerName, input.banana_type, input.vehicle_no, input.submitted_by || "").run()).meta.last_row_id;
 	const entries = Array.isArray(input.entries) ? input.entries : [];
-	for (const entry of entries) await db.prepare("INSERT INTO cutter_entries (batch_id, gross_weight_kg, units, stem_reduction_per_unit, net_weight_kg, grade, notes) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(batchId, Number(entry.weight_kg), Number(entry.units), Number(entry.stem_reduction_per_unit || 0), netWeight(entry), entry.grade || "1st grade", entry.notes || "").run();
+	for (const entry of entries) await db.prepare("INSERT INTO cutter_entries (batch_id, gross_weight_kg, units, stem_reduction_per_unit, net_weight_kg, grade, notes) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(batchId, Number(entry.weight_kg), Number(entry.units), Number(entry.stem_reduction_per_unit || 0), netWeight(entry.weight_kg, entry.units, entry.stem_reduction_per_unit), entry.grade || "1st grade", entry.notes || "").run();
 	await db.prepare("INSERT INTO activity_logs (log_type, reference_id, status, message) VALUES (?, ?, ?, ?)").bind("cutter_batch", batchId, "pending", `Cutter batch submitted by ${input.submitted_by || "cutter"} for ${farmerName}`).run();
 	await writeAudit(db, "cutter_batch", batchId, "create", changedBy, null, input);
 	return batchId;
+}
+async function requirePendingBatch(db, batchId) {
+	const batch = await db.prepare("SELECT * FROM cutter_batches WHERE id = ?").bind(batchId).first();
+	if (!batch) throw new Error("Cutter batch not found.");
+	if (batch.status !== "pending") throw new Error("This batch is already approved or rejected and can no longer be edited.");
+	return batch;
+}
+async function cutterBatchDetail(db, id) {
+	return {
+		batch: await db.prepare("SELECT * FROM cutter_batches WHERE id = ?").bind(id).first(),
+		entries: await all(db, "SELECT * FROM cutter_entries WHERE batch_id = ? ORDER BY id", id)
+	};
+}
+async function updateCutterBatch(db, id, input, changedBy) {
+	const before = await requirePendingBatch(db, id);
+	const farmer = await db.prepare("SELECT name FROM farmers WHERE id = ?").bind(Number(input.farmer_id)).first();
+	await db.prepare("UPDATE cutter_batches SET batch_date = ?, farmer_id = ?, farmer_name = ?, banana_type = ?, vehicle_no = ? WHERE id = ?").bind(input.batch_date, Number(input.farmer_id), farmer?.name || "Unknown farmer", input.banana_type, input.vehicle_no, id).run();
+	await writeAudit(db, "cutter_batch", id, "update", changedBy, before, input);
+}
+async function addCutterEntry(db, input, changedBy) {
+	const batchId = Number(input.batch_id);
+	await requirePendingBatch(db, batchId);
+	const grossWeightKg = Number(input.gross_weight_kg || 0);
+	const units = Number(input.units || 0);
+	const stemReductionPerUnit = Number(input.stem_reduction_per_unit || 0);
+	await writeAudit(db, "cutter_entry", (await db.prepare("INSERT INTO cutter_entries (batch_id, gross_weight_kg, units, stem_reduction_per_unit, net_weight_kg, grade, notes) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(batchId, grossWeightKg, units, stemReductionPerUnit, netWeight(grossWeightKg, units, stemReductionPerUnit), input.grade || "1st grade", input.notes || "").run()).meta.last_row_id, "create", changedBy, null, input);
+}
+async function updateCutterEntry(db, id, input, changedBy) {
+	const before = await db.prepare("SELECT * FROM cutter_entries WHERE id = ?").bind(id).first();
+	if (!before) throw new Error("Cutter entry not found.");
+	await requirePendingBatch(db, before.batch_id);
+	const grossWeightKg = Number(input.gross_weight_kg || 0);
+	const units = Number(input.units || 0);
+	const stemReductionPerUnit = Number(input.stem_reduction_per_unit || 0);
+	await db.prepare("UPDATE cutter_entries SET gross_weight_kg = ?, units = ?, stem_reduction_per_unit = ?, net_weight_kg = ?, grade = ?, notes = ? WHERE id = ?").bind(grossWeightKg, units, stemReductionPerUnit, netWeight(grossWeightKg, units, stemReductionPerUnit), input.grade || "1st grade", input.notes || "", id).run();
+	await writeAudit(db, "cutter_entry", id, "update", changedBy, before, input);
+}
+async function deleteCutterEntry(db, id, changedBy) {
+	const before = await db.prepare("SELECT * FROM cutter_entries WHERE id = ?").bind(id).first();
+	if (!before) throw new Error("Cutter entry not found.");
+	await requirePendingBatch(db, before.batch_id);
+	await db.prepare("DELETE FROM cutter_entries WHERE id = ?").bind(id).run();
+	await writeAudit(db, "cutter_entry", id, "delete", changedBy, before, null);
 }
 async function approveCutterBatch(db, input, changedBy) {
 	const id = Number(input.id);
 	const batch = await db.prepare("SELECT * FROM cutter_batches WHERE id = ?").bind(id).first();
 	if (!batch) throw new Error("Batch not found");
 	if (batch.status !== "pending") return id;
-	const rate = await db.prepare("SELECT buy_rate FROM banana_rates WHERE rate_date = ? AND banana_type = ?").bind(batch.batch_date, batch.banana_type).first();
-	const buyRate = Number(rate?.buy_rate || 0);
 	const entries = await all(db, "SELECT * FROM cutter_entries WHERE batch_id = ? ORDER BY id", id);
+	if (!entries.length) throw new Error("This batch has no weight lines to approve.");
+	const rateCache = /* @__PURE__ */ new Map();
+	for (const entry of entries) if (!rateCache.has(entry.grade)) {
+		const rate = await db.prepare("SELECT buy_rate FROM banana_rates WHERE rate_date = ? AND banana_type = ? AND grade = ?").bind(batch.batch_date, batch.banana_type, entry.grade).first();
+		if (!rate) throw new Error(`Set the ${entry.grade} buy rate for ${batch.banana_type} on ${batch.batch_date} before approving.`);
+		rateCache.set(entry.grade, Number(rate.buy_rate));
+	}
 	for (const entry of entries) {
-		const notes = `Cutter batch #${batch.id}; ${entry.grade}; gross ${entry.gross_weight_kg} kg; units ${entry.units}; stem reduction ${entry.stem_reduction_per_unit}/unit`;
-		await db.prepare("INSERT INTO purchases (purchase_date, farmer_id, farmer_name, banana_type, bunches, weight_kg, rate, vehicle_no, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(batch.batch_date, batch.farmer_id, batch.farmer_name, batch.banana_type, Number(entry.units), Number(entry.net_weight_kg), buyRate, batch.vehicle_no, notes).run();
+		const buyRate = rateCache.get(entry.grade);
+		const notes = `Cutter batch #${batch.id}`;
+		await db.prepare("INSERT INTO purchases (purchase_date, farmer_id, farmer_name, banana_type, grade, bunches, gross_weight_kg, stem_reduction_per_unit, weight_kg, rate, vehicle_no, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(batch.batch_date, batch.farmer_id, batch.farmer_name, batch.banana_type, entry.grade, Number(entry.units), Number(entry.gross_weight_kg), Number(entry.stem_reduction_per_unit), Number(entry.net_weight_kg), buyRate, batch.vehicle_no, notes).run();
 	}
 	await db.prepare("UPDATE cutter_batches SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?").bind(changedBy || "Admin", id).run();
 	await db.prepare("INSERT INTO activity_logs (log_type, reference_id, status, message) VALUES (?, ?, ?, ?)").bind("cutter_batch", id, "approved", `Cutter batch approved and converted to ${entries.length} purchase entries`).run();
@@ -1171,14 +1330,28 @@ async function rejectCutterBatch(db, input, changedBy) {
 }
 //#endregion
 //#region worker/sales.ts
+function saleFields(input) {
+	const bunches = Number(input.bunches || 0);
+	const stemReductionPerUnit = Number(input.stem_reduction_per_unit || 0);
+	const grossWeightKg = Number(input.gross_weight_kg || input.weight_kg || 0);
+	return {
+		bunches,
+		stemReductionPerUnit,
+		grossWeightKg,
+		weightKg: netWeight(grossWeightKg, bunches, stemReductionPerUnit),
+		grade: String(input.grade || "1st grade")
+	};
+}
 async function createSale(db, input, changedBy) {
 	const vendor = await db.prepare("SELECT name FROM vendors WHERE id = ?").bind(Number(input.vendor_id)).first();
-	await writeAudit(db, "sale", (await db.prepare("INSERT INTO sales (sale_date, vendor_id, vendor_name, banana_type, weight_kg, rate, paid, vehicle_no, notes, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(input.sale_date, Number(input.vendor_id), vendor?.name || "Unknown vendor", input.banana_type, Number(input.weight_kg), Number(input.rate), Number(input.paid || 0), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null).run()).meta.last_row_id, "create", changedBy, null, input);
+	const f = saleFields(input);
+	await writeAudit(db, "sale", (await db.prepare("INSERT INTO sales (sale_date, vendor_id, vendor_name, banana_type, grade, bunches, gross_weight_kg, stem_reduction_per_unit, weight_kg, rate, paid, vehicle_no, notes, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(input.sale_date, Number(input.vendor_id), vendor?.name || "Unknown vendor", input.banana_type, f.grade, f.bunches, f.grossWeightKg, f.stemReductionPerUnit, f.weightKg, Number(input.rate), Number(input.paid || 0), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null).run()).meta.last_row_id, "create", changedBy, null, input);
 }
 async function updateSale(db, id, input, changedBy) {
 	const before = await db.prepare("SELECT * FROM sales WHERE id = ?").bind(id).first();
 	const vendor = await db.prepare("SELECT name FROM vendors WHERE id = ?").bind(Number(input.vendor_id)).first();
-	await db.prepare("UPDATE sales SET sale_date = ?, vendor_id = ?, vendor_name = ?, banana_type = ?, weight_kg = ?, rate = ?, paid = ?, vehicle_no = ?, notes = ?, trip_id = ? WHERE id = ?").bind(input.sale_date, Number(input.vendor_id), vendor?.name || "Unknown vendor", input.banana_type, Number(input.weight_kg), Number(input.rate), Number(input.paid || 0), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null, id).run();
+	const f = saleFields(input);
+	await db.prepare("UPDATE sales SET sale_date = ?, vendor_id = ?, vendor_name = ?, banana_type = ?, grade = ?, bunches = ?, gross_weight_kg = ?, stem_reduction_per_unit = ?, weight_kg = ?, rate = ?, paid = ?, vehicle_no = ?, notes = ?, trip_id = ? WHERE id = ?").bind(input.sale_date, Number(input.vendor_id), vendor?.name || "Unknown vendor", input.banana_type, f.grade, f.bunches, f.grossWeightKg, f.stemReductionPerUnit, f.weightKg, Number(input.rate), Number(input.paid || 0), input.vehicle_no, input.notes || "", input.trip_id ? Number(input.trip_id) : null, id).run();
 	await writeAudit(db, "sale", id, "update", changedBy, before, input);
 }
 async function deleteSale(db, id, changedBy) {
@@ -1230,9 +1403,9 @@ var TABLES = [
 	"CREATE TABLE IF NOT EXISTS farmers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT DEFAULT '', village TEXT DEFAULT '', address TEXT DEFAULT '', gst TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS vendors (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT DEFAULT '', market TEXT DEFAULT '', address TEXT DEFAULT '', gst TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, vehicle_no TEXT NOT NULL UNIQUE, driver_name TEXT DEFAULT '', phone TEXT DEFAULT '', notes TEXT DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-	"CREATE TABLE IF NOT EXISTS banana_rates (id INTEGER PRIMARY KEY AUTOINCREMENT, rate_date TEXT NOT NULL, banana_type TEXT NOT NULL, buy_rate REAL NOT NULL, sell_rate REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(rate_date, banana_type))",
-	"CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_date TEXT NOT NULL, farmer_id INTEGER, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, bunches REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-	"CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, vendor_id INTEGER, vendor_name TEXT NOT NULL, banana_type TEXT NOT NULL, weight_kg REAL NOT NULL, rate REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+	"CREATE TABLE IF NOT EXISTS banana_rates (id INTEGER PRIMARY KEY AUTOINCREMENT, rate_date TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', buy_rate REAL NOT NULL, sell_rate REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(rate_date, banana_type, grade))",
+	"CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_date TEXT NOT NULL, farmer_id INTEGER, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+	"CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, vendor_id INTEGER, vendor_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT NOT NULL UNIQUE, party_type TEXT NOT NULL, party_id INTEGER NOT NULL, party_name TEXT NOT NULL, from_date TEXT NOT NULL, to_date TEXT NOT NULL, invoice_date TEXT NOT NULL, total REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, pending REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, item_type TEXT NOT NULL, source_id INTEGER NOT NULL, item_date TEXT NOT NULL, description TEXT NOT NULL, quantity_kg REAL NOT NULL, rate REAL NOT NULL, amount REAL NOT NULL)",
 	"CREATE TABLE IF NOT EXISTS cutter_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, vehicle_no TEXT NOT NULL, submitted_by TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -1297,14 +1470,61 @@ var ADDED_COLUMNS = [
 		table: "vehicles",
 		column: "deleted_at",
 		ddl: "ALTER TABLE vehicles ADD COLUMN deleted_at TEXT DEFAULT ''"
+	},
+	{
+		table: "purchases",
+		column: "grade",
+		ddl: "ALTER TABLE purchases ADD COLUMN grade TEXT NOT NULL DEFAULT '1st grade'"
+	},
+	{
+		table: "purchases",
+		column: "gross_weight_kg",
+		ddl: "ALTER TABLE purchases ADD COLUMN gross_weight_kg REAL NOT NULL DEFAULT 0"
+	},
+	{
+		table: "purchases",
+		column: "stem_reduction_per_unit",
+		ddl: "ALTER TABLE purchases ADD COLUMN stem_reduction_per_unit REAL NOT NULL DEFAULT 0"
+	},
+	{
+		table: "sales",
+		column: "grade",
+		ddl: "ALTER TABLE sales ADD COLUMN grade TEXT NOT NULL DEFAULT '1st grade'"
+	},
+	{
+		table: "sales",
+		column: "gross_weight_kg",
+		ddl: "ALTER TABLE sales ADD COLUMN gross_weight_kg REAL NOT NULL DEFAULT 0"
+	},
+	{
+		table: "sales",
+		column: "stem_reduction_per_unit",
+		ddl: "ALTER TABLE sales ADD COLUMN stem_reduction_per_unit REAL NOT NULL DEFAULT 0"
+	},
+	{
+		table: "sales",
+		column: "bunches",
+		ddl: "ALTER TABLE sales ADD COLUMN bunches REAL NOT NULL DEFAULT 0"
 	}
 ];
 async function ensureColumns(db) {
 	for (const { table, column, ddl } of ADDED_COLUMNS) if (!((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).some((row) => row.name === column)) await db.prepare(ddl).run();
 }
+async function ensureBananaRatesGrade(db) {
+	if (((await db.prepare("PRAGMA table_info(banana_rates)").all()).results || []).some((row) => row.name === "grade")) return;
+	await db.batch([
+		db.prepare("CREATE TABLE banana_rates_new (id INTEGER PRIMARY KEY AUTOINCREMENT, rate_date TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', buy_rate REAL NOT NULL, sell_rate REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(rate_date, banana_type, grade))"),
+		db.prepare("INSERT INTO banana_rates_new (id, rate_date, banana_type, grade, buy_rate, sell_rate, created_at) SELECT id, rate_date, banana_type, '1st grade', buy_rate, sell_rate, created_at FROM banana_rates"),
+		db.prepare("DROP TABLE banana_rates"),
+		db.prepare("ALTER TABLE banana_rates_new RENAME TO banana_rates"),
+		db.prepare("CREATE INDEX IF NOT EXISTS banana_rates_lookup_idx ON banana_rates (rate_date, banana_type, grade)")
+	]);
+}
 async function ensureDb(db) {
 	await db.batch(TABLES.map((sql) => db.prepare(sql)));
 	await ensureColumns(db);
+	await ensureBananaRatesGrade(db);
+	await db.prepare("CREATE INDEX IF NOT EXISTS banana_rates_lookup_idx ON banana_rates (rate_date, banana_type, grade)").run();
 	const count = await db.prepare("SELECT COUNT(*) AS count FROM farmers").first();
 	if (Number(count?.count || 0) === 0) {
 		await db.batch([
@@ -1314,7 +1534,7 @@ async function ensureDb(db) {
 			db.prepare("INSERT INTO vendors (name, phone, market, address) VALUES (?, ?, ?, ?)").bind("Town Fruit Traders", "8877665544", "Tiruppur", "Market road")
 		]);
 		const day = today();
-		await db.batch(BANANAS.map((banana, idx) => db.prepare("INSERT INTO banana_rates (rate_date, banana_type, buy_rate, sell_rate) VALUES (?, ?, ?, ?)").bind(day, banana, [
+		await db.batch(BANANAS.map((banana, idx) => db.prepare("INSERT INTO banana_rates (rate_date, banana_type, grade, buy_rate, sell_rate) VALUES (?, ?, '1st grade', ?, ?)").bind(day, banana, [
 			42,
 			28,
 			36,
@@ -1527,6 +1747,13 @@ async function exportData(db, type, month) {
 //#endregion
 //#region worker/index.ts
 async function handleApi(request, env, url) {
+	try {
+		return await handleApiRoute(request, env, url);
+	} catch (error) {
+		return json({ error: error instanceof Error ? error.message : "Something went wrong." }, 400);
+	}
+}
+async function handleApiRoute(request, env, url) {
 	const db = env.DB;
 	if (!db) return json({ error: "D1 database binding is missing." }, 500);
 	await ensureDb(db);
@@ -1636,6 +1863,35 @@ async function handleApi(request, env, url) {
 		return json({ ok: true });
 	}
 	if (url.pathname === "/api/cutter/submit") return json({ id: await submitCutterBatch(db, input, by) });
+	if (url.pathname === "/api/cutter/batch-detail") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		return json(await cutterBatchDetail(db, Number(url.searchParams.get("id") || 0)));
+	}
+	if (url.pathname === "/api/cutter/batch/update") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await updateCutterBatch(db, Number(input.id), input, by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/cutter/entry/add") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await addCutterEntry(db, input, by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/cutter/entry/update") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await updateCutterEntry(db, Number(input.id), input, by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/cutter/entry/delete") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await deleteCutterEntry(db, Number(input.id), by);
+		return json({ ok: true });
+	}
 	if (url.pathname === "/api/cutter/approve") {
 		const denied = requireRole(user, ["owner", "staff"]);
 		if (denied) return denied;

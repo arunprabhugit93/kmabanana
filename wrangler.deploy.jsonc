@@ -14,7 +14,7 @@
     // Must match the email verified via SendGrid's Single Sender
     // Verification (Settings > Sender Authentication > Verify a Single
     // Sender) — SendGrid rejects sends from any other address.
-    "EMAIL_FROM": "arunnnprabhu9786@gmail.com"
+    "EMAIL_FROM": "workarunmail@gmail.com"
   },
   "d1_databases": [
     {

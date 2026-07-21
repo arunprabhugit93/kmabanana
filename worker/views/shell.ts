@@ -7,6 +7,7 @@ const STYLE = `
 
 const CLIENT_SCRIPT = `
 const BANANAS = ["Nendran", "Robusta", "Poovan", "Red Banana"];
+const GRADES = ["1st grade", "2nd grade", "3rd grade"];
 const state = { farmers: [], vendors: [], vehicles: [], purchases: [], sales: [], rates: [], invoices: [], cutterBatches: [], activityLogs: [], settings: {}, emailLogs: [], farmerPayments: [], trips: [], openTrips: [], stock: [], staff: [], auditLogs: [], me: null };
 const ALL_TABS = [["dashboard","Dashboard"],["cutter","Cutter entry"],["masters","Masters"],["transactions","Daily entries"],["trips","Vehicle trips"],["invoices","Invoices"],["imports","Import / Export"],["reports","Reports"],["staff","Staff"],["activity","Activity log"]];
 let cutLines = [];
@@ -45,7 +46,10 @@ function tripOptions(items) {
   return '<option value="">No trip</option>' + items.map(x => '<option value="' + x.id + '">' + esc(x.trip_date) + ' - ' + esc(x.vehicle_no) + '</option>').join("");
 }
 function bananaOptions() { return BANANAS.map(b => '<option>' + b + '</option>').join(""); }
+function gradeOptions() { return GRADES.map(g => '<option>' + g + '</option>').join(""); }
+function gradeOptionsWith(selected) { return GRADES.map(g => '<option' + (g === selected ? " selected" : "") + '>' + g + '</option>').join(""); }
 document.querySelectorAll('select[name="banana_type"]').forEach(s => s.innerHTML = bananaOptions());
+document.querySelectorAll('select[name="grade"]').forEach(s => s.innerHTML = gradeOptions());
 
 async function api(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);
@@ -54,8 +58,24 @@ async function api(path, body) {
     $("authStatus").textContent = "Session expired. Please login again.";
     throw new Error("Login required");
   }
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    let message = await res.text();
+    try { message = JSON.parse(message).error || message; } catch {}
+    throw new Error(message);
+  }
   return res.json();
+}
+async function guarded(fn) {
+  try { await fn(); } catch (err) { alert(err.message); }
+}
+function wireRateAutofill(formId, priceField) {
+  const form = $(formId);
+  const update = () => {
+    const r = state.rates.find(x => x.rate_date === $("bizDate").value && x.banana_type === form.banana_type.value && x.grade === form.grade.value);
+    if (r) form.rate.value = r[priceField];
+  };
+  form.banana_type.addEventListener("change", update);
+  form.grade.addEventListener("change", update);
 }
 
 function setUser(user) {
@@ -155,7 +175,7 @@ function editFarmer(row) {
     fld("GST / tax id", '<input name="gst" value="' + esc(row.gst) + '">') +
     '</div>' + fld("Address", '<textarea name="address">' + esc(row.address) + '</textarea>') + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/farmers/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Farmer updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmers/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Farmer updated"); await load(); }); };
 }
 function payFarmer(row) {
   openModal("Record payment - " + row.name, '<form id="mForm" class="sectiongap"><div class="formgrid two">' +
@@ -164,7 +184,7 @@ function payFarmer(row) {
     fld("Mode", '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank transfer</option><option value="upi">UPI</option><option value="other">Other</option></select>') +
     '</div>' + fld("Notes", '<textarea name="notes" placeholder="Advance, weekly settlement, etc."></textarea>') +
     '<button>Save payment</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/farmer-payments", Object.assign({ farmer_id: row.id }, formData(e.target))); closeModal(); showToast("Payment recorded"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmer-payments", Object.assign({ farmer_id: row.id }, formData(e.target))); closeModal(); showToast("Payment recorded"); await load(); }); };
 }
 async function viewLedger(row) {
   const data = await api("/api/farmer-ledger?farmer_id=" + row.id);
@@ -185,35 +205,42 @@ function editVendor(row) {
     fld("GST / tax id", '<input name="gst" value="' + esc(row.gst) + '">') +
     '</div>' + fld("Address", '<textarea name="address">' + esc(row.address) + '</textarea>') + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/vendors/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Vendor updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/vendors/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Vendor updated"); await load(); }); };
 }
 function editPurchase(row) {
-  openModal("Edit purchase", '<form id="mForm" class="sectiongap"><div class="formgrid two">' +
+  const gross = row.gross_weight_kg || row.weight_kg;
+  openModal("Edit purchase", '<form id="mForm" class="sectiongap"><div class="formgrid">' +
     fld("Date", '<input name="purchase_date" type="date" value="' + esc(row.purchase_date) + '" required>') +
     fld("Farmer", '<select name="farmer_id">' + farmerOptionsWith(row.farmer_id) + '</select>') +
     fld("Banana type", '<select name="banana_type">' + bananaOptionsWith(row.banana_type) + '</select>') +
-    fld("Bunches", '<input name="bunches" type="number" min="0" step="0.01" value="' + esc(row.bunches) + '">') +
-    fld("Weight kg", '<input name="weight_kg" type="number" min="0" step="0.01" value="' + esc(row.weight_kg) + '" required>') +
+    fld("Grade", '<select name="grade">' + gradeOptionsWith(row.grade) + '</select>') +
+    fld("Bunches / units", '<input name="bunches" type="number" min="0" step="0.01" value="' + esc(row.bunches) + '">') +
+    fld("Gross weight kg", '<input name="gross_weight_kg" type="number" min="0" step="0.01" value="' + esc(gross) + '" required>') +
+    fld("Stem reduction / unit", '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" value="' + esc(row.stem_reduction_per_unit || 0) + '">') +
     fld("Rate / kg", '<input name="rate" type="number" min="0" step="0.01" value="' + esc(row.rate) + '" required>') +
     fld("Vehicle", '<select name="vehicle_no">' + vehicleOptionsWith(row.vehicle_no) + '</select>') +
     fld("Trip", '<select name="trip_id">' + tripOptionsWith(row.trip_id) + '</select>') +
     '</div>' + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/purchases/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Purchase updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/purchases/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Purchase updated"); await load(); }); };
 }
 function editSale(row) {
-  openModal("Edit sale", '<form id="mForm" class="sectiongap"><div class="formgrid two">' +
+  const gross = row.gross_weight_kg || row.weight_kg;
+  openModal("Edit sale", '<form id="mForm" class="sectiongap"><div class="formgrid">' +
     fld("Date", '<input name="sale_date" type="date" value="' + esc(row.sale_date) + '" required>') +
     fld("Vendor", '<select name="vendor_id">' + vendorOptionsWith(row.vendor_id) + '</select>') +
     fld("Banana type", '<select name="banana_type">' + bananaOptionsWith(row.banana_type) + '</select>') +
-    fld("Weight kg", '<input name="weight_kg" type="number" min="0" step="0.01" value="' + esc(row.weight_kg) + '" required>') +
+    fld("Grade", '<select name="grade">' + gradeOptionsWith(row.grade) + '</select>') +
+    fld("Bunches / units", '<input name="bunches" type="number" min="0" step="0.01" value="' + esc(row.bunches) + '">') +
+    fld("Gross weight kg", '<input name="gross_weight_kg" type="number" min="0" step="0.01" value="' + esc(gross) + '" required>') +
+    fld("Stem reduction / unit", '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" value="' + esc(row.stem_reduction_per_unit || 0) + '">') +
     fld("Rate / kg", '<input name="rate" type="number" min="0" step="0.01" value="' + esc(row.rate) + '" required>') +
     fld("Paid", '<input name="paid" type="number" min="0" step="0.01" value="' + esc(row.paid) + '">') +
     fld("Vehicle", '<select name="vehicle_no">' + vehicleOptionsWith(row.vehicle_no) + '</select>') +
     fld("Trip", '<select name="trip_id">' + tripOptionsWith(row.trip_id) + '</select>') +
     '</div>' + fld("Notes", '<textarea name="notes">' + esc(row.notes) + '</textarea>') +
     '<button>Save changes</button></form>');
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/sales/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Sale updated"); await load(); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/sales/update", Object.assign({ id: row.id }, formData(e.target))); closeModal(); showToast("Sale updated"); await load(); }); };
 }
 async function viewTrip(id) {
   const data = await api("/api/trip-detail?id=" + id);
@@ -226,8 +253,64 @@ async function viewTrip(id) {
     '<h3 style="margin:14px 0 6px">Purchases on this trip</h3>' + table(["Farmer","Type","Kg","Value"], data.purchases.map(x => [x.farmer_name, x.banana_type, kg(x.weight_kg), rs(x.weight_kg*x.rate)])) +
     '<h3 style="margin:14px 0 6px">Sales on this trip</h3>' + table(["Vendor","Type","Kg","Value"], data.sales.map(x => [x.vendor_name, x.banana_type, kg(x.weight_kg), rs(x.weight_kg*x.rate)]));
   openModal("Trip - " + data.trip.vehicle_no + " (" + data.trip.trip_date + ")", body);
-  $("mForm").onsubmit = async e => { e.preventDefault(); await api("/api/trip-expenses", Object.assign({ trip_id: id }, formData(e.target))); showToast("Expense added"); await viewTrip(id); await load(); };
-  $("modalBody").onclick = async e => { if (e.target.dataset.delExpense) { await api("/api/trip-expenses/delete", { id: Number(e.target.dataset.delExpense) }); await viewTrip(id); await load(); } };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/trip-expenses", Object.assign({ trip_id: id }, formData(e.target))); showToast("Expense added"); await viewTrip(id); await load(); }); };
+  $("modalBody").onclick = e => { if (e.target.dataset.delExpense) guarded(async () => { await api("/api/trip-expenses/delete", { id: Number(e.target.dataset.delExpense) }); await viewTrip(id); await load(); }); };
+}
+
+async function viewCutterBatch(id) {
+  const data = await api("/api/cutter/batch-detail?id=" + id);
+  const batch = data.batch;
+  const entries = data.entries;
+  const pending = batch.status === "pending";
+  const totalNet = entries.reduce((a, en) => a + en.net_weight_kg, 0);
+  let body = '<p class="subcopy">Status: <span class="pill ' + (batch.status === "pending" ? "warn" : batch.status === "rejected" ? "bad" : "") + '">' + esc(batch.status) + '</span> | Total net: ' + kg(totalNet) + '</p>';
+  if (pending) {
+    body += '<form id="batchHeaderForm" class="formgrid" style="margin:10px 0">' +
+      '<input name="batch_date" type="date" value="' + esc(batch.batch_date) + '" required>' +
+      '<select name="farmer_id">' + farmerOptionsWith(batch.farmer_id) + '</select>' +
+      '<select name="banana_type">' + bananaOptionsWith(batch.banana_type) + '</select>' +
+      '<select name="vehicle_no">' + vehicleOptionsWith(batch.vehicle_no) + '</select>' +
+      '<button class="secondary">Save batch details</button></form>';
+  } else {
+    body += '<p class="subcopy">' + esc(batch.batch_date) + ' | ' + esc(batch.farmer_name) + ' | ' + esc(batch.banana_type) + ' | ' + esc(batch.vehicle_no) + '</p>';
+  }
+  const lineHeaders = ["Gross kg","Units","Stem/unit","Grade","Net kg","Notes"].concat(pending ? ["Action"] : []);
+  body += '<h3 style="margin:14px 0 6px">Weight lines</h3>' + table(lineHeaders, entries.map(en => {
+    const row = [kg(en.gross_weight_kg), en.units, en.stem_reduction_per_unit, en.grade, kg(en.net_weight_kg), en.notes];
+    if (pending) row.push(raw('<button type="button" class="secondary small" data-edit-entry="' + en.id + '">Edit</button> <button type="button" class="danger small" data-del-entry="' + en.id + '">Delete</button>'));
+    return row;
+  }));
+  if (pending) {
+    body += '<form id="addEntryForm" class="formgrid" style="margin-top:10px">' +
+      '<input name="gross_weight_kg" type="number" min="0" step="0.01" placeholder="Gross weight kg" required>' +
+      '<input name="units" type="number" min="0" step="1" placeholder="Units" required>' +
+      '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" placeholder="Stem reduction / unit">' +
+      '<select name="grade">' + gradeOptions() + '</select>' +
+      '<input name="notes" placeholder="Notes">' +
+      '<button>Add line</button></form>';
+    body += '<div class="actions" style="margin-top:14px"><button type="button" id="batchApprove">Approve batch</button><button type="button" class="danger" id="batchReject">Reject batch</button></div>';
+  }
+  openModal("Cutter batch #" + batch.id, body);
+  if (pending) {
+    $("batchHeaderForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/cutter/batch/update", Object.assign({ id: batch.id }, formData(e.target))); showToast("Batch updated"); await viewCutterBatch(id); await load(); }); };
+    $("addEntryForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/cutter/entry/add", Object.assign({ batch_id: batch.id }, formData(e.target))); showToast("Line added"); await viewCutterBatch(id); await load(); }); };
+    $("modalBody").onclick = e => {
+      if (e.target.dataset.editEntry) editCutterEntry(entries.find(x => x.id === Number(e.target.dataset.editEntry)), id);
+      if (e.target.dataset.delEntry && confirm("Remove this weight line?")) guarded(async () => { await api("/api/cutter/entry/delete", { id: Number(e.target.dataset.delEntry) }); showToast("Line removed"); await viewCutterBatch(id); await load(); });
+    };
+    $("batchApprove").onclick = () => guarded(async () => { await api("/api/cutter/approve", { id: batch.id }); closeModal(); showToast("Batch approved as purchase"); await load(); });
+    $("batchReject").onclick = () => { if (confirm("Reject this batch?")) guarded(async () => { await api("/api/cutter/reject", { id: batch.id }); closeModal(); showToast("Batch rejected"); await load(); }); };
+  }
+}
+function editCutterEntry(entry, batchId) {
+  openModal("Edit weight line", '<form id="mForm" class="sectiongap"><div class="formgrid">' +
+    fld("Gross weight kg", '<input name="gross_weight_kg" type="number" min="0" step="0.01" value="' + esc(entry.gross_weight_kg) + '" required>') +
+    fld("Units", '<input name="units" type="number" min="0" step="1" value="' + esc(entry.units) + '" required>') +
+    fld("Stem reduction / unit", '<input name="stem_reduction_per_unit" type="number" min="0" step="0.01" value="' + esc(entry.stem_reduction_per_unit) + '">') +
+    fld("Grade", '<select name="grade">' + gradeOptionsWith(entry.grade) + '</select>') +
+    '</div>' + fld("Notes", '<textarea name="notes">' + esc(entry.notes) + '</textarea>') +
+    '<button>Save line</button></form>');
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/cutter/entry/update", Object.assign({ id: entry.id }, formData(e.target))); showToast("Line updated"); await viewCutterBatch(batchId); await load(); }); };
 }
 
 function render() {
@@ -239,12 +322,10 @@ function render() {
   const paid = dailySales.reduce((a,x) => a + x.paid, 0);
   const inKg = dailyPurchases.reduce((a,x) => a + x.weight_kg, 0);
   $("mPurchase").textContent = rs(pv); $("mSales").textContent = rs(sv); $("mMargin").textContent = rs(sv - pv); $("mPending").textContent = rs(sv - paid); $("mStock").textContent = kg(inKg - dailySales.reduce((a,x)=>a+x.weight_kg,0));
-  $("rateCards").innerHTML = BANANAS.map(b => {
-    const r = state.rates.find(x => x.rate_date === d && x.banana_type === b);
-    const week = state.rates.filter(x => x.banana_type === b).map(x => x.sell_rate);
-    const avg = week.reduce((a,n) => a + Number(n), 0) / (week.length || 1);
-    return '<article class="rate"><h3>' + b + '</h3><strong>' + (r ? rs(r.sell_rate) : "No rate") + '</strong><span>Buy ' + (r ? rs(r.buy_rate) : "-") + '</span><small>7-day avg sell ' + rs(avg) + '</small></article>';
-  }).join("");
+  $("rateCards").innerHTML = table(["Banana type","Grade","Buy rate","Sell rate"], BANANAS.flatMap(b => GRADES.map(g => {
+    const r = state.rates.find(x => x.rate_date === d && x.banana_type === b && x.grade === g);
+    return [b, g, r ? rs(r.buy_rate) : "—", r ? rs(r.sell_rate) : "—"];
+  })));
   document.querySelectorAll('select[name="farmer_id"]').forEach(s => s.innerHTML = options(state.farmers, "farmer"));
   const vendorSelect = document.querySelector('#saleForm select[name="vendor_id"]');
   if (vendorSelect) vendorSelect.innerHTML = options(state.vendors, "vendor");
@@ -278,11 +359,11 @@ function render() {
   $("cutterLog").innerHTML = table(["Date","Farmer","Banana","Vehicle","Lines","Net kg","Status","Action"], state.cutterBatches.map(x => [
     x.batch_date, x.farmer_name, x.banana_type, x.vehicle_no, x.entry_count, kg(x.total_net_kg),
     raw('<span class="pill ' + (x.status === 'pending' ? 'warn' : x.status === 'rejected' ? 'bad' : '') + '">' + esc(x.status) + '</span>'),
-    raw(x.status === "pending" ? '<button type="button" data-approve-batch="' + x.id + '">Approve</button> <button type="button" class="danger" data-reject-batch="' + x.id + '">Reject</button>' : '-')
+    raw('<div class="actions"><button type="button" class="secondary small" data-view-batch="' + x.id + '">View</button>' + (x.status === "pending" ? ' <button type="button" class="small" data-approve-batch="' + x.id + '">Approve</button> <button type="button" class="danger small" data-reject-batch="' + x.id + '">Reject</button>' : '') + '</div>')
   ]));
-  $("transactionTables").innerHTML = "<h3>Purchases</h3>" + table(["Date","Farmer","Type","Bunches","Kg","Rate","Value","Vehicle","Actions"], dailyPurchases.map(x => [x.purchase_date,x.farmer_name,x.banana_type,x.bunches,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),x.vehicle_no,
+  $("transactionTables").innerHTML = "<h3>Purchases</h3>" + table(["Date","Farmer","Type","Grade","Bunches","Kg","Rate","Value","Vehicle","Actions"], dailyPurchases.map(x => [x.purchase_date,x.farmer_name,x.banana_type,x.grade,x.bunches,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),x.vehicle_no,
     raw('<div class="actions"><button type="button" class="secondary small" data-edit-purchase="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-purchase="' + x.id + '">Delete</button></div>')]))
-    + "<h3>Sales</h3>" + table(["Date","Vendor","Type","Kg","Rate","Value","Paid","Vehicle","Actions"], dailySales.map(x => [x.sale_date,x.vendor_name,x.banana_type,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),rs(x.paid),x.vehicle_no,
+    + "<h3>Sales</h3>" + table(["Date","Vendor","Type","Grade","Kg","Rate","Value","Paid","Vehicle","Actions"], dailySales.map(x => [x.sale_date,x.vendor_name,x.banana_type,x.grade,kg(x.weight_kg),rs(x.rate),rs(x.weight_kg*x.rate),rs(x.paid),x.vehicle_no,
     raw('<div class="actions"><button type="button" class="secondary small" data-edit-sale="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-sale="' + x.id + '">Delete</button></div>')]));
   $("invoiceTable").innerHTML = table(["No","Party","Period","Total","Pending","Status","Action"], state.invoices.map(x => [x.invoice_no,x.party_name,x.from_date + " to " + x.to_date,rs(x.total),rs(x.pending),raw('<span class="pill ' + (x.status === 'void' ? 'bad' : x.pending > 0 ? 'warn' : '') + '">' + esc(x.status) + '</span>'),raw('<a class="btn secondary small" href="/invoice/' + x.id + '" target="_blank">Print</a>' + (state.me && state.me.role === "owner" && x.status !== "void" ? ' <button type="button" class="danger small" data-void-invoice="' + x.id + '">Void</button>' : ''))]));
   $("dailyReport").value = dailyText();
@@ -308,7 +389,14 @@ function render() {
 }
 
 function formData(form) { return Object.fromEntries(new FormData(form).entries()); }
-async function save(path, form, extra) { await api(path, Object.assign(formData(form), extra || {})); form.reset(); showToast("Saved successfully"); await load(); }
+async function save(path, form, extra) {
+  await guarded(async () => {
+    await api(path, Object.assign(formData(form), extra || {}));
+    form.reset();
+    showToast("Saved successfully");
+    await load();
+  });
+}
 $("farmerForm").onsubmit = e => { e.preventDefault(); save("/api/farmers", e.target); };
 $("vendorForm").onsubmit = e => { e.preventDefault(); save("/api/vendors", e.target); };
 $("vehicleForm").onsubmit = e => { e.preventDefault(); save("/api/vehicles", e.target); };
@@ -330,53 +418,57 @@ $("cutLines").onclick = e => {
     renderCutLines();
   }
 };
-$("cutterForm").onsubmit = async e => {
+$("cutterForm").onsubmit = e => {
   e.preventDefault();
   if (!cutLines.length) { showToast("Add at least one weight line"); return; }
-  await api("/api/cutter/submit", Object.assign(formData(e.target), { batch_date: $("bizDate").value, entries: cutLines }));
-  cutLines = [];
-  e.target.reset();
-  renderCutLines();
-  showToast("Cutter batch submitted");
-  await load();
+  guarded(async () => {
+    await api("/api/cutter/submit", Object.assign(formData(e.target), { batch_date: $("bizDate").value, entries: cutLines }));
+    cutLines = [];
+    e.target.reset();
+    renderCutLines();
+    showToast("Cutter batch submitted");
+    await load();
+  });
 };
-$("cutterLog").onclick = async e => {
-  if (e.target.dataset.approveBatch) { await api("/api/cutter/approve", { id: Number(e.target.dataset.approveBatch) }); showToast("Batch approved as purchase"); await load(); }
-  if (e.target.dataset.rejectBatch) { await api("/api/cutter/reject", { id: Number(e.target.dataset.rejectBatch) }); showToast("Batch rejected"); await load(); }
+$("cutterLog").onclick = e => {
+  const t = e.target.dataset;
+  if (t.viewBatch) viewCutterBatch(Number(t.viewBatch));
+  if (t.approveBatch) guarded(async () => { await api("/api/cutter/approve", { id: Number(t.approveBatch) }); showToast("Batch approved as purchase"); await load(); });
+  if (t.rejectBatch) guarded(async () => { await api("/api/cutter/reject", { id: Number(t.rejectBatch) }); showToast("Batch rejected"); await load(); });
 };
-$("farmersTable").onclick = async e => {
+$("farmersTable").onclick = e => {
   const t = e.target.dataset;
   if (t.editFarmer) editFarmer(state.farmers.find(x => x.id === Number(t.editFarmer)));
   if (t.payFarmer) payFarmer(state.farmers.find(x => x.id === Number(t.payFarmer)));
   if (t.ledgerFarmer) viewLedger(state.farmers.find(x => x.id === Number(t.ledgerFarmer)));
-  if (t.delFarmer && confirm("Delete this farmer? Historical purchases stay on record.")) { await api("/api/farmers/delete", { id: Number(t.delFarmer) }); showToast("Farmer deleted"); await load(); }
+  if (t.delFarmer && confirm("Delete this farmer? Historical purchases stay on record.")) guarded(async () => { await api("/api/farmers/delete", { id: Number(t.delFarmer) }); showToast("Farmer deleted"); await load(); });
 };
-$("vendorsTable").onclick = async e => {
+$("vendorsTable").onclick = e => {
   const t = e.target.dataset;
   if (t.editVendor) editVendor(state.vendors.find(x => x.id === Number(t.editVendor)));
-  if (t.delVendor && confirm("Delete this vendor? Historical sales stay on record.")) { await api("/api/vendors/delete", { id: Number(t.delVendor) }); showToast("Vendor deleted"); await load(); }
+  if (t.delVendor && confirm("Delete this vendor? Historical sales stay on record.")) guarded(async () => { await api("/api/vendors/delete", { id: Number(t.delVendor) }); showToast("Vendor deleted"); await load(); });
 };
-$("vehiclesTable").onclick = async e => {
-  if (e.target.dataset.delVehicle && confirm("Remove this vehicle?")) { await api("/api/vehicles/delete", { id: Number(e.target.dataset.delVehicle) }); showToast("Vehicle removed"); await load(); }
+$("vehiclesTable").onclick = e => {
+  if (e.target.dataset.delVehicle && confirm("Remove this vehicle?")) guarded(async () => { await api("/api/vehicles/delete", { id: Number(e.target.dataset.delVehicle) }); showToast("Vehicle removed"); await load(); });
 };
-$("transactionTables").onclick = async e => {
+$("transactionTables").onclick = e => {
   const t = e.target.dataset;
   if (t.editPurchase) editPurchase(state.purchases.find(x => x.id === Number(t.editPurchase)));
   if (t.editSale) editSale(state.sales.find(x => x.id === Number(t.editSale)));
-  if (t.delPurchase && confirm("Delete this purchase entry?")) { await api("/api/purchases/delete", { id: Number(t.delPurchase) }); showToast("Purchase deleted"); await load(); }
-  if (t.delSale && confirm("Delete this sale entry?")) { await api("/api/sales/delete", { id: Number(t.delSale) }); showToast("Sale deleted"); await load(); }
+  if (t.delPurchase && confirm("Delete this purchase entry?")) guarded(async () => { await api("/api/purchases/delete", { id: Number(t.delPurchase) }); showToast("Purchase deleted"); await load(); });
+  if (t.delSale && confirm("Delete this sale entry?")) guarded(async () => { await api("/api/sales/delete", { id: Number(t.delSale) }); showToast("Sale deleted"); await load(); });
 };
-$("tripsTable").onclick = async e => {
+$("tripsTable").onclick = e => {
   const t = e.target.dataset;
   if (t.viewTrip) viewTrip(Number(t.viewTrip));
-  if (t.settleTrip) { await api("/api/trips/settle", { id: Number(t.settleTrip) }); showToast("Trip settled"); await load(); }
-  if (t.delTrip && confirm("Delete this trip? Linked entries stay on record.")) { await api("/api/trips/delete", { id: Number(t.delTrip) }); showToast("Trip deleted"); await load(); }
+  if (t.settleTrip) guarded(async () => { await api("/api/trips/settle", { id: Number(t.settleTrip) }); showToast("Trip settled"); await load(); });
+  if (t.delTrip && confirm("Delete this trip? Linked entries stay on record.")) guarded(async () => { await api("/api/trips/delete", { id: Number(t.delTrip) }); showToast("Trip deleted"); await load(); });
 };
-$("invoiceTable").onclick = async e => {
-  if (e.target.dataset.voidInvoice && confirm("Void this invoice?")) { await api("/api/invoices/void", { id: Number(e.target.dataset.voidInvoice) }); showToast("Invoice voided"); await load(); }
+$("invoiceTable").onclick = e => {
+  if (e.target.dataset.voidInvoice && confirm("Void this invoice?")) guarded(async () => { await api("/api/invoices/void", { id: Number(e.target.dataset.voidInvoice) }); showToast("Invoice voided"); await load(); });
 };
-$("staffTable").onclick = async e => {
-  if (e.target.dataset.toggleStaff) { await api("/api/staff/toggle", { id: Number(e.target.dataset.toggleStaff), active: e.target.dataset.active !== "1" }); showToast("Staff updated"); await load(); }
+$("staffTable").onclick = e => {
+  if (e.target.dataset.toggleStaff) guarded(async () => { await api("/api/staff/toggle", { id: Number(e.target.dataset.toggleStaff), active: e.target.dataset.active !== "1" }); showToast("Staff updated"); await load(); });
 };
 $("activityTable").onclick = e => {
   if (e.target.dataset.viewAudit) {
@@ -386,9 +478,9 @@ $("activityTable").onclick = e => {
 };
 $("invoiceForm").party_type.onchange = e => { document.querySelector('#invoiceForm select[name="party_id"]').innerHTML = options(e.target.value === "vendor" ? state.vendors : state.farmers, "party"); };
 $("invoiceForm").from_date.value = todayStr.slice(0,8) + "01"; $("invoiceForm").to_date.value = todayStr;
-$("invoiceForm").onsubmit = async e => { e.preventDefault(); const out = await api("/api/invoices/generate", formData(e.target)); showToast("Invoice generated"); window.open("/invoice/" + out.id, "_blank"); await load(); };
-$("emailForm").onsubmit = async e => { e.preventDefault(); await api("/api/settings", formData(e.target)); $("emailStatus").textContent = "Settings saved."; showToast("Email settings saved"); await load(); };
-$("sendDaily").onclick = async () => { const out = await api("/api/email/send-daily", { report_date: $("bizDate").value }); $("emailStatus").textContent = out.message; showToast("Daily report logged"); await load(); };
+$("invoiceForm").onsubmit = e => { e.preventDefault(); guarded(async () => { const out = await api("/api/invoices/generate", formData(e.target)); showToast("Invoice generated"); window.open("/invoice/" + out.id, "_blank"); await load(); }); };
+$("emailForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/settings", formData(e.target)); $("emailStatus").textContent = "Settings saved."; showToast("Email settings saved"); await load(); }); };
+$("sendDaily").onclick = () => guarded(async () => { const out = await api("/api/email/send-daily", { report_date: $("bizDate").value }); $("emailStatus").textContent = out.message; showToast("Daily report logged"); await load(); });
 $("refresh").onclick = load; $("bizDate").onchange = load; $("month").onchange = load;
 $("copyReport").onclick = async () => { await navigator.clipboard.writeText($("dailyReport").value); $("copyReport").textContent = "Copied"; showToast("Report copied"); setTimeout(() => $("copyReport").textContent = "Copy report", 1200); };
 $("printReport").onclick = () => { const w = window.open("", "_blank"); w.document.write("<pre>" + esc($("dailyReport").value) + "</pre>"); w.print(); };
@@ -418,8 +510,10 @@ function csvParse(text) {
   for (let i=0;i<text.length;i++) { const c=text[i], n=text[i+1]; if(c==='"'&&q&&n==='"'){cell+='"';i++;} else if(c==='"'){q=!q;} else if(c===","&&!q){row.push(cell);cell="";} else if((c==="\\n"||c==="\\r")&&!q){ if(c==="\\r"&&n==="\\n") i++; row.push(cell); if(row.some(v=>v.trim())) rows.push(row); row=[]; cell=""; } else cell+=c; }
   row.push(cell); if(row.some(v=>v.trim())) rows.push(row); const head = rows.shift().map(h => h.trim()); return rows.map(r => Object.fromEntries(head.map((h,i) => [h, r[i] || ""])));
 }
-$("importForm").onsubmit = async e => { e.preventDefault(); const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; showToast("Import complete"); e.target.reset(); await load(); };
+$("importForm").onsubmit = e => { e.preventDefault(); guarded(async () => { const f = e.target.file.files[0]; const rows = csvParse(await f.text()); const type = e.target.type.value; const out = await api("/api/import", { type, rows }); $("importStatus").textContent = "Imported " + out.count + " " + type + " rows."; showToast("Import complete"); e.target.reset(); await load(); }); };
 document.querySelectorAll("[data-export]").forEach(b => b.onclick = () => { location.href = "/api/export?type=" + b.dataset.export + "&month=" + $("month").value; });
+wireRateAutofill("purchaseForm", "buy_rate");
+wireRateAutofill("saleForm", "sell_rate");
 initAuth().catch(err => { $("authStatus").textContent = err.message; });
 `;
 
@@ -492,10 +586,11 @@ const BODY = `
     <section id="dashboard" class="view active">
       <div class="grid three">
         <div class="panel wide">
-          <div class="heading"><div><p class="eyebrow">Daily rates</p><h2>Rate board and 7-day averages</h2><p class="subcopy">Set the buy and sell rates used by the counter team for the selected business date.</p></div></div>
-          <div class="rates" id="rateCards"></div>
-          <form class="formgrid four" id="rateForm">
+          <div class="heading"><div><p class="eyebrow">Daily rates</p><h2>Rate board by grade</h2><p class="subcopy">Set the buy and sell rates for the selected business date. 1st/2nd/3rd grade each carry their own price.</p></div></div>
+          <div id="rateCards"></div>
+          <form class="formgrid five" id="rateForm">
             <select name="banana_type"></select>
+            <select name="grade"></select>
             <input name="buy_rate" type="number" min="0" step="0.01" placeholder="Buy rate / kg" required>
             <input name="sell_rate" type="number" min="0" step="0.01" placeholder="Sell rate / kg" required>
             <button>Save rate</button>
@@ -575,20 +670,20 @@ const BODY = `
     <section id="transactions" class="view">
       <div class="grid">
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Inbound</p><h2>Purchase from farmer</h2><p class="subcopy">Record vehicle loads as they arrive from farms. Attach a trip if you're tracking that vehicle's costs.</p></div></div>
-          <form class="formgrid two" id="purchaseForm">
-            <select name="farmer_id" required></select><select name="banana_type"></select>
-            <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches"><input name="weight_kg" type="number" min="0" step="0.01" placeholder="Weight kg" required>
-            <input name="rate" type="number" min="0" step="0.01" placeholder="Rate / kg" required><select name="vehicle_no" required></select>
-            <select name="trip_id"></select><textarea name="notes" placeholder="Notes"></textarea><button>Save purchase</button>
+          <div class="heading"><div><p class="eyebrow">Inbound</p><h2>Purchase from farmer</h2><p class="subcopy">Enter the gross scale weight and grade; stem reduction per unit is subtracted automatically to get the billable net weight. Attach a trip if you're tracking that vehicle's costs.</p></div></div>
+          <form class="formgrid" id="purchaseForm">
+            <select name="farmer_id" required></select><select name="banana_type"></select><select name="grade"></select>
+            <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches / units"><input name="gross_weight_kg" type="number" min="0" step="0.01" placeholder="Gross weight kg" required><input name="stem_reduction_per_unit" type="number" min="0" step="0.01" placeholder="Stem reduction / unit">
+            <input name="rate" type="number" min="0" step="0.01" placeholder="Rate / kg" required><select name="vehicle_no" required></select><select name="trip_id"></select>
+            <textarea name="notes" placeholder="Notes"></textarea><button>Save purchase</button>
           </form>
         </div>
         <div class="panel">
-          <div class="heading"><div><p class="eyebrow">Outbound</p><h2>Sale to vendor</h2><p class="subcopy">Capture dispatch weight, sale rate, payment, and vehicle number.</p></div></div>
-          <form class="formgrid two" id="saleForm">
-            <select name="vendor_id" required></select><select name="banana_type"></select>
-            <input name="weight_kg" type="number" min="0" step="0.01" placeholder="Weight kg" required><input name="rate" type="number" min="0" step="0.01" placeholder="Sale rate / kg" required>
-            <input name="paid" type="number" min="0" step="0.01" placeholder="Amount paid"><select name="vehicle_no" required></select>
+          <div class="heading"><div><p class="eyebrow">Outbound</p><h2>Sale to vendor</h2><p class="subcopy">Same grade and stem-reduction fields as purchases, plus dispatch weight, sale rate, payment, and vehicle number.</p></div></div>
+          <form class="formgrid" id="saleForm">
+            <select name="vendor_id" required></select><select name="banana_type"></select><select name="grade"></select>
+            <input name="bunches" type="number" min="0" step="0.01" placeholder="Bunches / units"><input name="gross_weight_kg" type="number" min="0" step="0.01" placeholder="Gross weight kg" required><input name="stem_reduction_per_unit" type="number" min="0" step="0.01" placeholder="Stem reduction / unit">
+            <input name="rate" type="number" min="0" step="0.01" placeholder="Sale rate / kg" required><input name="paid" type="number" min="0" step="0.01" placeholder="Amount paid"><select name="vehicle_no" required></select>
             <select name="trip_id"></select><textarea name="notes" placeholder="Notes"></textarea><button>Save sale</button>
           </form>
         </div>

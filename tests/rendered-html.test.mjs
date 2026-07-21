@@ -34,6 +34,9 @@ test("banana merchant worker replaces the starter preview", async () => {
   assert.match(shell, /Stock reconciliation/);
   assert.match(shell, /Add staff/);
   assert.match(shell, /Activity log/);
+  assert.match(shell, /viewCutterBatch/);
+  assert.match(shell, /Gross weight kg/);
+  assert.match(shell, /Rate board by grade/);
 
   // Auth and schema modules.
   assert.match(auth, /kms_session/);
@@ -44,17 +47,23 @@ test("banana merchant worker replaces the starter preview", async () => {
   assert.match(schema, /farmer_payments/);
   assert.match(schema, /vehicle_trips/);
   assert.match(schema, /audit_logs/);
+  assert.match(schema, /UNIQUE\(rate_date, banana_type, grade\)/);
 
   // Invoice rendering.
   assert.match(invoices, /Print invoice/);
   assert.match(invoices, /data:image\/png;base64/);
+  assert.match(invoices, /\$\{source\.banana_type\} \(\$\{source\.grade\}\)/);
 
-  // Purchases still apply the cutter stem-weight reduction.
+  // Purchases still apply the cutter stem-weight reduction, and cutter
+  // batches can be reviewed/edited before approval.
   assert.match(purchases, /stem_reduction_per_unit/);
+  assert.match(purchases, /cutterBatchDetail/);
+  assert.match(purchases, /requirePendingBatch/);
 
   // The Worker entry wires auth, routing, and login gating together.
   assert.match(index, /\/api\/auth\/request/);
   assert.match(index, /\/api\/auth\/verify/);
   assert.match(index, /Login required/);
   assert.match(index, /appShell\(\)/);
+  assert.match(index, /\/api\/cutter\/batch-detail/);
 });

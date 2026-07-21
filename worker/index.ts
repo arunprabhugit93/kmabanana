@@ -3,7 +3,7 @@ import { appShell } from "./views/shell";
 import { invoiceHtml, generateInvoice, voidInvoice } from "./invoices";
 import { createFarmer, createRate, createVehicle, createVendor, deleteFarmer, deleteVehicle, deleteVendor, updateFarmer, updateVendor } from "./masters";
 import { createFarmerPayment, deleteFarmerPayment, farmerLedger } from "./payments";
-import { approveCutterBatch, createPurchase, deletePurchase, rejectCutterBatch, submitCutterBatch, updatePurchase } from "./purchases";
+import { addCutterEntry, approveCutterBatch, createPurchase, cutterBatchDetail, deleteCutterEntry, deletePurchase, rejectCutterBatch, submitCutterBatch, updateCutterBatch, updateCutterEntry, updatePurchase } from "./purchases";
 import { createSale, deleteSale, updateSale } from "./sales";
 import { dailyReport, sendDailyEmail } from "./reports";
 import { ensureDb } from "./schema";
@@ -13,6 +13,14 @@ import { exportData, importRows, template } from "./importExport";
 import { bodyJson, csv, html, json } from "./util";
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
+  try {
+    return await handleApiRoute(request, env, url);
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Something went wrong." }, 400);
+  }
+}
+
+async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Response> {
   const db = env.DB;
   if (!db) return json({ error: "D1 database binding is missing." }, 500);
   await ensureDb(db);
@@ -96,8 +104,28 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     await deleteSale(db, Number(input.id), by); return json({ ok: true });
   }
 
-  // Cutter workflow — submit allowed for everyone logged in (incl. cutter role); approve/reject owner+staff
+  // Cutter workflow — submit allowed for everyone logged in (incl. cutter role); everything else owner+staff
   if (url.pathname === "/api/cutter/submit") return json({ id: await submitCutterBatch(db, input, by) });
+  if (url.pathname === "/api/cutter/batch-detail") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    return json(await cutterBatchDetail(db, Number(url.searchParams.get("id") || 0)));
+  }
+  if (url.pathname === "/api/cutter/batch/update") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await updateCutterBatch(db, Number(input.id), input, by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/cutter/entry/add") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await addCutterEntry(db, input, by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/cutter/entry/update") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await updateCutterEntry(db, Number(input.id), input, by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/cutter/entry/delete") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await deleteCutterEntry(db, Number(input.id), by); return json({ ok: true });
+  }
   if (url.pathname === "/api/cutter/approve") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
     return json({ id: await approveCutterBatch(db, input, by) });

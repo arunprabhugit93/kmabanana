@@ -1,4 +1,9 @@
 export const BANANAS = ["Nendran", "Robusta", "Poovan", "Red Banana"];
+export const GRADES = ["1st grade", "2nd grade", "3rd grade"];
+
+export function netWeight(grossWeightKg: unknown, units: unknown, stemReductionPerUnit: unknown): number {
+  return Math.max(0, Number(grossWeightKg || 0) - Number(units || 0) * Number(stemReductionPerUnit || 0));
+}
 
 export function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   const headers = new Headers(extraHeaders);

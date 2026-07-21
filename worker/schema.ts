@@ -4,9 +4,9 @@ const TABLES = [
   "CREATE TABLE IF NOT EXISTS farmers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT DEFAULT '', village TEXT DEFAULT '', address TEXT DEFAULT '', gst TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS vendors (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT DEFAULT '', market TEXT DEFAULT '', address TEXT DEFAULT '', gst TEXT DEFAULT '', notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, vehicle_no TEXT NOT NULL UNIQUE, driver_name TEXT DEFAULT '', phone TEXT DEFAULT '', notes TEXT DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-  "CREATE TABLE IF NOT EXISTS banana_rates (id INTEGER PRIMARY KEY AUTOINCREMENT, rate_date TEXT NOT NULL, banana_type TEXT NOT NULL, buy_rate REAL NOT NULL, sell_rate REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(rate_date, banana_type))",
-  "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_date TEXT NOT NULL, farmer_id INTEGER, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, bunches REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-  "CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, vendor_id INTEGER, vendor_name TEXT NOT NULL, banana_type TEXT NOT NULL, weight_kg REAL NOT NULL, rate REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "CREATE TABLE IF NOT EXISTS banana_rates (id INTEGER PRIMARY KEY AUTOINCREMENT, rate_date TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', buy_rate REAL NOT NULL, sell_rate REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(rate_date, banana_type, grade))",
+  "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_date TEXT NOT NULL, farmer_id INTEGER, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, vendor_id INTEGER, vendor_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT NOT NULL UNIQUE, party_type TEXT NOT NULL, party_id INTEGER NOT NULL, party_name TEXT NOT NULL, from_date TEXT NOT NULL, to_date TEXT NOT NULL, invoice_date TEXT NOT NULL, total REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, pending REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, item_type TEXT NOT NULL, source_id INTEGER NOT NULL, item_date TEXT NOT NULL, description TEXT NOT NULL, quantity_kg REAL NOT NULL, rate REAL NOT NULL, amount REAL NOT NULL)",
   "CREATE TABLE IF NOT EXISTS cutter_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, vehicle_no TEXT NOT NULL, submitted_by TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -46,7 +46,14 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: "sales", column: "deleted_at", ddl: "ALTER TABLE sales ADD COLUMN deleted_at TEXT DEFAULT ''" },
   { table: "farmers", column: "deleted_at", ddl: "ALTER TABLE farmers ADD COLUMN deleted_at TEXT DEFAULT ''" },
   { table: "vendors", column: "deleted_at", ddl: "ALTER TABLE vendors ADD COLUMN deleted_at TEXT DEFAULT ''" },
-  { table: "vehicles", column: "deleted_at", ddl: "ALTER TABLE vehicles ADD COLUMN deleted_at TEXT DEFAULT ''" }
+  { table: "vehicles", column: "deleted_at", ddl: "ALTER TABLE vehicles ADD COLUMN deleted_at TEXT DEFAULT ''" },
+  { table: "purchases", column: "grade", ddl: "ALTER TABLE purchases ADD COLUMN grade TEXT NOT NULL DEFAULT '1st grade'" },
+  { table: "purchases", column: "gross_weight_kg", ddl: "ALTER TABLE purchases ADD COLUMN gross_weight_kg REAL NOT NULL DEFAULT 0" },
+  { table: "purchases", column: "stem_reduction_per_unit", ddl: "ALTER TABLE purchases ADD COLUMN stem_reduction_per_unit REAL NOT NULL DEFAULT 0" },
+  { table: "sales", column: "grade", ddl: "ALTER TABLE sales ADD COLUMN grade TEXT NOT NULL DEFAULT '1st grade'" },
+  { table: "sales", column: "gross_weight_kg", ddl: "ALTER TABLE sales ADD COLUMN gross_weight_kg REAL NOT NULL DEFAULT 0" },
+  { table: "sales", column: "stem_reduction_per_unit", ddl: "ALTER TABLE sales ADD COLUMN stem_reduction_per_unit REAL NOT NULL DEFAULT 0" },
+  { table: "sales", column: "bunches", ddl: "ALTER TABLE sales ADD COLUMN bunches REAL NOT NULL DEFAULT 0" }
 ];
 
 async function ensureColumns(db: D1Database) {
@@ -57,9 +64,31 @@ async function ensureColumns(db: D1Database) {
   }
 }
 
+// banana_rates originally had UNIQUE(rate_date, banana_type); grade-based
+// pricing needs UNIQUE(rate_date, banana_type, grade), which SQLite can
+// only achieve by rebuilding the table.
+async function ensureBananaRatesGrade(db: D1Database) {
+  const columns = await db.prepare("PRAGMA table_info(banana_rates)").all();
+  const hasGrade = (columns.results || []).some((row) => (row as { name?: string }).name === "grade");
+  if (hasGrade) return;
+  await db.batch([
+    db.prepare(
+      "CREATE TABLE banana_rates_new (id INTEGER PRIMARY KEY AUTOINCREMENT, rate_date TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', buy_rate REAL NOT NULL, sell_rate REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(rate_date, banana_type, grade))"
+    ),
+    db.prepare(
+      "INSERT INTO banana_rates_new (id, rate_date, banana_type, grade, buy_rate, sell_rate, created_at) SELECT id, rate_date, banana_type, '1st grade', buy_rate, sell_rate, created_at FROM banana_rates"
+    ),
+    db.prepare("DROP TABLE banana_rates"),
+    db.prepare("ALTER TABLE banana_rates_new RENAME TO banana_rates"),
+    db.prepare("CREATE INDEX IF NOT EXISTS banana_rates_lookup_idx ON banana_rates (rate_date, banana_type, grade)")
+  ]);
+}
+
 export async function ensureDb(db: D1Database) {
   await db.batch(TABLES.map((sql) => db.prepare(sql)));
   await ensureColumns(db);
+  await ensureBananaRatesGrade(db);
+  await db.prepare("CREATE INDEX IF NOT EXISTS banana_rates_lookup_idx ON banana_rates (rate_date, banana_type, grade)").run();
 
   const count = await db.prepare("SELECT COUNT(*) AS count FROM farmers").first<{ count: number }>();
   if (Number(count?.count || 0) === 0) {
@@ -70,7 +99,7 @@ export async function ensureDb(db: D1Database) {
       db.prepare("INSERT INTO vendors (name, phone, market, address) VALUES (?, ?, ?, ?)").bind("Town Fruit Traders", "8877665544", "Tiruppur", "Market road")
     ]);
     const day = today();
-    await db.batch(BANANAS.map((banana, idx) => db.prepare("INSERT INTO banana_rates (rate_date, banana_type, buy_rate, sell_rate) VALUES (?, ?, ?, ?)").bind(day, banana, [42, 28, 36, 58][idx], [49, 34, 43, 67][idx])));
+    await db.batch(BANANAS.map((banana, idx) => db.prepare("INSERT INTO banana_rates (rate_date, banana_type, grade, buy_rate, sell_rate) VALUES (?, ?, '1st grade', ?, ?)").bind(day, banana, [42, 28, 36, 58][idx], [49, 34, 43, 67][idx])));
   }
 
   const vehicleCount = await db.prepare("SELECT COUNT(*) AS count FROM vehicles").first<{ count: number }>();

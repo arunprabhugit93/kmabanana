@@ -5,6 +5,7 @@ interface InvoiceLineRow {
   id: number;
   item_date: string;
   banana_type: string;
+  grade: string;
   weight_kg: number;
   rate: number;
   paid: number;
@@ -20,8 +21,8 @@ export async function generateInvoice(db: D1Database, input: Record<string, unkn
   const toDate = String(input.to_date);
 
   const rows = (partyType === "vendor"
-    ? await all(db, "SELECT id, sale_date AS item_date, banana_type, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE vendor_id = ? AND sale_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY sale_date, id", partyId, fromDate, toDate)
-    : await all(db, "SELECT id, purchase_date AS item_date, banana_type, weight_kg, rate, bunches, vehicle_no, notes, 0 AS paid FROM purchases WHERE farmer_id = ? AND purchase_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY purchase_date, id", partyId, fromDate, toDate)) as InvoiceLineRow[];
+    ? await all(db, "SELECT id, sale_date AS item_date, banana_type, grade, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE vendor_id = ? AND sale_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY sale_date, id", partyId, fromDate, toDate)
+    : await all(db, "SELECT id, purchase_date AS item_date, banana_type, grade, weight_kg, rate, bunches, vehicle_no, notes, 0 AS paid FROM purchases WHERE farmer_id = ? AND purchase_date BETWEEN ? AND ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY purchase_date, id", partyId, fromDate, toDate)) as InvoiceLineRow[];
 
   const party = partyType === "vendor"
     ? await db.prepare("SELECT name FROM vendors WHERE id = ?").bind(partyId).first<{ name: string }>()
@@ -46,7 +47,7 @@ export async function generateInvoice(db: D1Database, input: Record<string, unkn
   for (const row of rows) {
     const amount = Number(row.weight_kg) * Number(row.rate);
     const descriptionParts = [
-      row.banana_type,
+      `${row.banana_type} (${row.grade})`,
       row.vehicle_no ? `Vehicle ${row.vehicle_no}` : "",
       partyType === "farmer" && row.bunches ? `Units ${row.bunches}` : "",
       row.notes || ""
@@ -79,10 +80,10 @@ async function logoDataUrl(env: Env) {
 
 async function invoiceLineDescription(db: D1Database, item: InvoiceItemRow) {
   if (item.item_type === "purchase") {
-    const source = await db.prepare("SELECT banana_type, bunches, weight_kg, rate, vehicle_no, notes FROM purchases WHERE id = ?").bind(Number(item.source_id)).first<PurchaseRow>();
+    const source = await db.prepare("SELECT banana_type, grade, bunches, weight_kg, rate, vehicle_no, notes FROM purchases WHERE id = ?").bind(Number(item.source_id)).first<PurchaseRow>();
     if (source) {
       return [
-        source.banana_type,
+        `${source.banana_type} (${source.grade})`,
         source.vehicle_no ? `Vehicle ${source.vehicle_no}` : "",
         source.bunches ? `Units ${source.bunches}` : "",
         source.notes || ""
@@ -90,10 +91,10 @@ async function invoiceLineDescription(db: D1Database, item: InvoiceItemRow) {
     }
   }
   if (item.item_type === "sale") {
-    const source = await db.prepare("SELECT banana_type, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE id = ?").bind(Number(item.source_id)).first<SaleRow>();
+    const source = await db.prepare("SELECT banana_type, grade, weight_kg, rate, paid, vehicle_no, notes FROM sales WHERE id = ?").bind(Number(item.source_id)).first<SaleRow>();
     if (source) {
       return [
-        source.banana_type,
+        `${source.banana_type} (${source.grade})`,
         source.vehicle_no ? `Vehicle ${source.vehicle_no}` : "",
         source.notes || ""
       ].filter(Boolean).join(" | ");

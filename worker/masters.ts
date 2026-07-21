@@ -86,9 +86,10 @@ export async function deleteVehicle(db: D1Database, id: number, changedBy: strin
 }
 
 export async function createRate(db: D1Database, input: Record<string, unknown>, changedBy: string) {
-  const before = await db.prepare("SELECT * FROM banana_rates WHERE rate_date = ? AND banana_type = ?").bind(input.rate_date, input.banana_type).first();
+  const grade = String(input.grade || "1st grade");
+  const before = await db.prepare("SELECT * FROM banana_rates WHERE rate_date = ? AND banana_type = ? AND grade = ?").bind(input.rate_date, input.banana_type, grade).first();
   await db.prepare(
-    "INSERT INTO banana_rates (rate_date, banana_type, buy_rate, sell_rate) VALUES (?, ?, ?, ?) ON CONFLICT(rate_date, banana_type) DO UPDATE SET buy_rate = excluded.buy_rate, sell_rate = excluded.sell_rate"
-  ).bind(input.rate_date, input.banana_type, Number(input.buy_rate), Number(input.sell_rate)).run();
+    "INSERT INTO banana_rates (rate_date, banana_type, grade, buy_rate, sell_rate) VALUES (?, ?, ?, ?, ?) ON CONFLICT(rate_date, banana_type, grade) DO UPDATE SET buy_rate = excluded.buy_rate, sell_rate = excluded.sell_rate"
+  ).bind(input.rate_date, input.banana_type, grade, Number(input.buy_rate), Number(input.sell_rate)).run();
   await writeAudit(db, "banana_rate", 0, before ? "update" : "create", changedBy, before, input);
 }

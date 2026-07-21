@@ -1,15 +1,30 @@
 import { writeAudit } from "./audit";
+import { netWeight } from "./util";
+
+function saleFields(input: Record<string, unknown>) {
+  const bunches = Number(input.bunches || 0);
+  const stemReductionPerUnit = Number(input.stem_reduction_per_unit || 0);
+  const grossWeightKg = Number(input.gross_weight_kg || input.weight_kg || 0);
+  const weightKg = netWeight(grossWeightKg, bunches, stemReductionPerUnit);
+  const grade = String(input.grade || "1st grade");
+  return { bunches, stemReductionPerUnit, grossWeightKg, weightKg, grade };
+}
 
 export async function createSale(db: D1Database, input: Record<string, unknown>, changedBy: string) {
   const vendor = await db.prepare("SELECT name FROM vendors WHERE id = ?").bind(Number(input.vendor_id)).first<{ name: string }>();
+  const f = saleFields(input);
   const result = await db.prepare(
-    "INSERT INTO sales (sale_date, vendor_id, vendor_name, banana_type, weight_kg, rate, paid, vehicle_no, notes, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO sales (sale_date, vendor_id, vendor_name, banana_type, grade, bunches, gross_weight_kg, stem_reduction_per_unit, weight_kg, rate, paid, vehicle_no, notes, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).bind(
     input.sale_date,
     Number(input.vendor_id),
     vendor?.name || "Unknown vendor",
     input.banana_type,
-    Number(input.weight_kg),
+    f.grade,
+    f.bunches,
+    f.grossWeightKg,
+    f.stemReductionPerUnit,
+    f.weightKg,
     Number(input.rate),
     Number(input.paid || 0),
     input.vehicle_no,
@@ -22,14 +37,19 @@ export async function createSale(db: D1Database, input: Record<string, unknown>,
 export async function updateSale(db: D1Database, id: number, input: Record<string, unknown>, changedBy: string) {
   const before = await db.prepare("SELECT * FROM sales WHERE id = ?").bind(id).first();
   const vendor = await db.prepare("SELECT name FROM vendors WHERE id = ?").bind(Number(input.vendor_id)).first<{ name: string }>();
+  const f = saleFields(input);
   await db.prepare(
-    "UPDATE sales SET sale_date = ?, vendor_id = ?, vendor_name = ?, banana_type = ?, weight_kg = ?, rate = ?, paid = ?, vehicle_no = ?, notes = ?, trip_id = ? WHERE id = ?"
+    "UPDATE sales SET sale_date = ?, vendor_id = ?, vendor_name = ?, banana_type = ?, grade = ?, bunches = ?, gross_weight_kg = ?, stem_reduction_per_unit = ?, weight_kg = ?, rate = ?, paid = ?, vehicle_no = ?, notes = ?, trip_id = ? WHERE id = ?"
   ).bind(
     input.sale_date,
     Number(input.vendor_id),
     vendor?.name || "Unknown vendor",
     input.banana_type,
-    Number(input.weight_kg),
+    f.grade,
+    f.bunches,
+    f.grossWeightKg,
+    f.stemReductionPerUnit,
+    f.weightKg,
     Number(input.rate),
     Number(input.paid || 0),
     input.vehicle_no,

@@ -29,7 +29,10 @@ interface PurchaseRow {
   farmer_id: number | null;
   farmer_name: string;
   banana_type: string;
+  grade: string;
   bunches: number;
+  gross_weight_kg: number;
+  stem_reduction_per_unit: number;
   weight_kg: number;
   rate: number;
   vehicle_no: string;
@@ -43,6 +46,10 @@ interface SaleRow {
   vendor_id: number | null;
   vendor_name: string;
   banana_type: string;
+  grade: string;
+  bunches: number;
+  gross_weight_kg: number;
+  stem_reduction_per_unit: number;
   weight_kg: number;
   rate: number;
   paid: number;

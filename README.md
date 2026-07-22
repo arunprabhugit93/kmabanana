@@ -91,6 +91,90 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run deploy`: deploy the Worker + D1-backed app straight to Cloudflare (see below)
+
+## Live deployment (Cloudflare Workers + D1)
+
+The app is deployed at **https://kms-banana-desk.kmsbanana.workers.dev** on a
+Cloudflare account, using `wrangler.deploy.jsonc` (separate from the vite/vinext
+dev config, which uses a placeholder local D1 binding). To redeploy after
+making changes:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...   # Account API token: D1:Edit, Workers Scripts:Edit
+export CLOUDFLARE_ACCOUNT_ID=...
+npm run deploy
+```
+
+The Worker bootstraps its own D1 schema on first request (`worker/schema.ts`),
+so a fresh database needs no manual migration step.
+
+### Email provider
+
+`worker/email.ts` sends real email via **SendGrid**, using **Single Sender
+Verification** rather than full domain verification — this lets you send to
+any recipient by verifying just one email address you already have access
+to, no domain purchase required. (Resend was tried first, but its free tier
+only allows sending to the account owner's own inbox without a verified
+domain, which doesn't work for a multi-staff app.)
+
+Setup:
+
+1. Sign up free at [sendgrid.com](https://sendgrid.com) — no card required
+   for the free tier (100 emails/day).
+2. Settings → Sender Authentication → **Verify a Single Sender** → enter the
+   email address the app should send *from* (click the confirmation link
+   SendGrid emails to that address).
+3. Settings → API Keys → Create API Key (Restricted Access → Mail Send:
+   Full Access is enough).
+4. Set the secret and the matching `EMAIL_FROM` var (must exactly match the
+   verified sender), then redeploy:
+   ```bash
+   npx wrangler secret put SENDGRID_API_KEY --config wrangler.deploy.jsonc
+   npm run deploy
+   ```
+
+Without `SENDGRID_API_KEY` configured, `/api/auth/request` falls back to
+returning the OTP directly in the API response (and the login screen shows
+it on-screen) instead of emailing it — fine for local dev, but on a live
+deployment it means anyone who knows an allowlisted staff email can log in
+without touching that person's inbox. Configure SendGrid before trusting
+this with real farmer/vendor financial data.
+
+### WhatsApp provider
+
+`worker/whatsapp.ts` sends via Meta's **WhatsApp Cloud API**. Business-initiated
+messages (the recipient didn't message first) require a pre-approved message
+template — freeform text only works inside a 24h window after the recipient
+messages the business number.
+
+Setup:
+
+1. Create a Meta Business Account at business.facebook.com, then an app at
+   developers.facebook.com/apps with the WhatsApp product added.
+2. Get the Phone Number ID, WhatsApp Business Account ID, and a permanent
+   access token (Business Settings → Users → System Users).
+3. Set the secrets, then redeploy:
+   ```bash
+   npx wrangler secret put WHATSAPP_ACCESS_TOKEN --config wrangler.deploy.jsonc
+   npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID --config wrangler.deploy.jsonc
+   npx wrangler secret put WHATSAPP_BUSINESS_ACCOUNT_ID --config wrangler.deploy.jsonc
+   npm run deploy
+   ```
+4. Register message templates (`createMessageTemplate` in `worker/whatsapp.ts`)
+   for `purchase_invoice_notice`, `sale_invoice_notice`, and
+   `period_report_notice`, and wait for Meta's approval before sends will
+   actually go through.
+
+Without these configured, invoice/report sends report "WhatsApp is not
+configured" instead of failing — the rest of the app works fine either way.
+
+### First login becomes the owner
+
+The very first successful login on a fresh database is automatically granted
+the `owner` role (full access, including managing other staff). Log in with
+whichever email should be the business owner's account first — don't use a
+throwaway/test email for that first login.
 
 ## Learn More
 

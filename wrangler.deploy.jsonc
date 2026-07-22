@@ -1,0 +1,35 @@
+{
+  // Deploy-only config for `wrangler deploy` against a real Cloudflare
+  // account. Local dev uses vite.config.ts + @cloudflare/vite-plugin
+  // instead, which is why this isn't named wrangler.jsonc.
+  "name": "kms-banana-desk",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    // Must match the email verified via SendGrid's Single Sender
+    // Verification (Settings > Sender Authentication > Verify a Single
+    // Sender) — SendGrid rejects sends from any other address.
+    "EMAIL_FROM": "workarunmail@gmail.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kms-banana-d1",
+      "database_id": "b5398779-e89f-4422-8aae-939ef0008d8f"
+    }
+  ],
+  "triggers": {
+    // 13:30 UTC = 19:00 IST. Fires the daily report every day; the
+    // scheduled() handler also sends the weekly report on Mondays and
+    // the monthly report on the 1st.
+    "crons": ["30 13 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,165 @@
+import { writeAudit } from "./audit";
+import { all } from "./util";
+
+export async function createFarmerAdvance(db: D1Database, input: Record<string, unknown>, changedBy: string) {
+  const result = await db.prepare(
+    "INSERT INTO farmer_payments (payment_date, farmer_id, amount, mode, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+  ).bind(input.advance_date, Number(input.farmer_id), Number(input.amount), String(input.mode || "cash"), input.notes || "", changedBy).run();
+  await writeAudit(db, "farmer_advance", result.meta.last_row_id, "create", changedBy, null, input);
+}
+
+export async function deleteFarmerAdvance(db: D1Database, id: number, changedBy: string) {
+  const before = await db.prepare("SELECT * FROM farmer_payments WHERE id = ?").bind(id).first();
+  await db.prepare("UPDATE farmer_payments SET deleted_at = ? WHERE id = ?").bind(new Date().toISOString(), id).run();
+  await writeAudit(db, "farmer_advance", id, "delete", changedBy, before, null);
+}
+
+export async function createVendorAdvance(db: D1Database, input: Record<string, unknown>, changedBy: string) {
+  const result = await db.prepare(
+    "INSERT INTO vendor_advances (advance_date, vendor_id, amount, mode, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+  ).bind(input.advance_date, Number(input.vendor_id), Number(input.amount), String(input.mode || "cash"), input.notes || "", changedBy).run();
+  await writeAudit(db, "vendor_advance", result.meta.last_row_id, "create", changedBy, null, input);
+}
+
+export async function deleteVendorAdvance(db: D1Database, id: number, changedBy: string) {
+  const before = await db.prepare("SELECT * FROM vendor_advances WHERE id = ?").bind(id).first();
+  await db.prepare("UPDATE vendor_advances SET deleted_at = ? WHERE id = ?").bind(new Date().toISOString(), id).run();
+  await writeAudit(db, "vendor_advance", id, "delete", changedBy, before, null);
+}
+
+// A lump-sum payment against a farmer's/vendor's outstanding invoices,
+// applied oldest-invoice-first. Any amount left over after every open
+// invoice is settled is banked as an advance credit for future invoices.
+export async function makeFarmerPayment(db: D1Database, farmerId: number, input: Record<string, unknown>, changedBy: string) {
+  let remaining = Number(input.amount);
+  const paymentDate = String(input.payment_date || "");
+  const mode = String(input.mode || "cash");
+  const notes = String(input.notes || "");
+  const openInvoices = await all(
+    db,
+    "SELECT * FROM purchase_invoices WHERE farmer_id = ? AND status = 'open' AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date ASC, id ASC",
+    farmerId
+  ) as PurchaseInvoiceRow[];
+
+  let appliedToInvoices = 0;
+  for (const inv of openInvoices) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remaining, inv.pending);
+    if (applied <= 0) continue;
+    const paid = inv.paid + applied;
+    const pending = inv.total - paid;
+    await db.prepare("UPDATE purchase_invoices SET paid = ?, pending = ?, status = ? WHERE id = ?").bind(paid, pending, pending > 0 ? "open" : "paid", inv.id).run();
+    await writeAudit(db, "purchase_invoice", inv.id, "update", changedBy, inv, { paid, pending, note: "Settled via portfolio payment" });
+    remaining -= applied;
+    appliedToInvoices += applied;
+  }
+
+  if (remaining > 0) {
+    await createFarmerAdvance(db, { advance_date: paymentDate, farmer_id: farmerId, amount: remaining, mode, notes: notes ? `${notes} (credit balance)` : "Credit balance after settling invoices" }, changedBy);
+  }
+
+  return { appliedToInvoices, creditBalance: Math.max(0, remaining) };
+}
+
+export async function receiveVendorPayment(db: D1Database, vendorId: number, input: Record<string, unknown>, changedBy: string) {
+  let remaining = Number(input.amount);
+  const paymentDate = String(input.payment_date || "");
+  const mode = String(input.mode || "cash");
+  const notes = String(input.notes || "");
+  const openInvoices = await all(
+    db,
+    "SELECT * FROM sale_invoices WHERE vendor_id = ? AND status = 'open' AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date ASC, id ASC",
+    vendorId
+  ) as SaleInvoiceRow[];
+
+  let appliedToInvoices = 0;
+  for (const inv of openInvoices) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remaining, inv.pending);
+    if (applied <= 0) continue;
+    const paid = inv.paid + applied;
+    const pending = inv.total - paid;
+    await db.prepare("UPDATE sale_invoices SET paid = ?, pending = ?, status = ? WHERE id = ?").bind(paid, pending, pending > 0 ? "open" : "paid", inv.id).run();
+    await writeAudit(db, "sale_invoice", inv.id, "update", changedBy, inv, { paid, pending, note: "Settled via portfolio payment" });
+    remaining -= applied;
+    appliedToInvoices += applied;
+  }
+
+  if (remaining > 0) {
+    await createVendorAdvance(db, { advance_date: paymentDate, vendor_id: vendorId, amount: remaining, mode, notes: notes ? `${notes} (credit balance)` : "Credit balance after settling invoices" }, changedBy);
+  }
+
+  return { appliedToInvoices, creditBalance: Math.max(0, remaining) };
+}
+
+export async function farmerPortfolio(db: D1Database, farmerId: number) {
+  const farmer = await db.prepare("SELECT * FROM farmers WHERE id = ?").bind(farmerId).first<FarmerRow>();
+  const invoices = await all(
+    db,
+    "SELECT * FROM purchase_invoices WHERE farmer_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date DESC, id DESC",
+    farmerId
+  ) as PurchaseInvoiceRow[];
+  const advances = await all(
+    db,
+    "SELECT id, payment_date AS advance_date, amount, mode, notes FROM farmer_payments WHERE farmer_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY payment_date DESC, id DESC",
+    farmerId
+  );
+  const kgRow = await db.prepare(
+    `SELECT COALESCE(SUM(pi.net_weight_kg), 0) AS kg FROM purchase_invoice_items pi
+     JOIN purchase_invoices p ON p.id = pi.invoice_id
+     WHERE p.farmer_id = ? AND p.status != 'void' AND (p.deleted_at = '' OR p.deleted_at IS NULL)`
+  ).bind(farmerId).first<{ kg: number }>();
+
+  const activeInvoices = invoices.filter((inv) => inv.status !== "void");
+  const totalInvoiced = activeInvoices.reduce((sum, inv) => sum + inv.total, 0);
+  const totalPending = activeInvoices.reduce((sum, inv) => sum + inv.pending, 0);
+  const totalAdvance = (advances as Array<{ amount: number }>).reduce((sum, a) => sum + Number(a.amount), 0);
+
+  return {
+    farmer,
+    invoices,
+    advances,
+    totalInvoiced,
+    totalPending,
+    totalAdvance,
+    netBalance: totalPending - totalAdvance,
+    totalKg: Number(kgRow?.kg || 0),
+    invoiceCount: activeInvoices.length
+  };
+}
+
+export async function vendorPortfolio(db: D1Database, vendorId: number) {
+  const vendor = await db.prepare("SELECT * FROM vendors WHERE id = ?").bind(vendorId).first<VendorRow>();
+  const invoices = await all(
+    db,
+    "SELECT * FROM sale_invoices WHERE vendor_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date DESC, id DESC",
+    vendorId
+  ) as SaleInvoiceRow[];
+  const advances = await all(
+    db,
+    "SELECT id, advance_date, amount, mode, notes FROM vendor_advances WHERE vendor_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY advance_date DESC, id DESC",
+    vendorId
+  );
+  const kgRow = await db.prepare(
+    `SELECT COALESCE(SUM(si.net_weight_kg), 0) AS kg FROM sale_invoice_items si
+     JOIN sale_invoices s ON s.id = si.invoice_id
+     WHERE s.vendor_id = ? AND s.status != 'void' AND (s.deleted_at = '' OR s.deleted_at IS NULL)`
+  ).bind(vendorId).first<{ kg: number }>();
+
+  const activeInvoices = invoices.filter((inv) => inv.status !== "void");
+  const totalInvoiced = activeInvoices.reduce((sum, inv) => sum + inv.total, 0);
+  const totalPending = activeInvoices.reduce((sum, inv) => sum + inv.pending, 0);
+  const totalAdvance = (advances as Array<{ amount: number }>).reduce((sum, a) => sum + Number(a.amount), 0);
+
+  return {
+    vendor,
+    invoices,
+    advances,
+    totalInvoiced,
+    totalPending,
+    totalAdvance,
+    netBalance: totalPending - totalAdvance,
+    totalKg: Number(kgRow?.kg || 0),
+    invoiceCount: activeInvoices.length
+  };
+}

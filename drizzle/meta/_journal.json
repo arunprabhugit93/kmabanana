@@ -43,6 +43,13 @@
       "when": 1784433600000,
       "tag": "0005_invoice_centric_rebuild",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784520000000,
+      "tag": "0006_advances",
+      "breakpoints": true
     }
   ]
 }

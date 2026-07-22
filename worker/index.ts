@@ -35,6 +35,8 @@ import { getState } from "./state";
 import { appShell } from "./views/shell";
 import { exportMaster, importMaster, mastersTemplate } from "./mastersImportExport";
 import { BUSINESS_SETTING_KEYS } from "./invoiceBranding";
+import { createFarmerAdvance, createVendorAdvance, deleteFarmerAdvance, deleteVendorAdvance, farmerPortfolio, vendorPortfolio } from "./advances";
+import { dashboardSummary } from "./dashboard";
 import { bodyJson, csv, html, json } from "./util";
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
@@ -125,6 +127,33 @@ async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Res
     const type = String(input.type || "farmers");
     const rows = Array.isArray(input.rows) ? (input.rows as Record<string, unknown>[]) : [];
     return json({ count: await importMaster(db, type, rows, by) });
+  }
+
+  // Farmer/vendor portfolios and advance payments — owner + staff
+  if (url.pathname === "/api/farmer-portfolio") {
+    return json(await farmerPortfolio(db, Number(url.searchParams.get("id") || 0)));
+  }
+  if (url.pathname === "/api/vendor-portfolio") {
+    return json(await vendorPortfolio(db, Number(url.searchParams.get("id") || 0)));
+  }
+  if (url.pathname === "/api/farmer-advances") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await createFarmerAdvance(db, input, by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/farmer-advances/delete") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await deleteFarmerAdvance(db, Number(input.id), by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/vendor-advances") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await createVendorAdvance(db, input, by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/vendor-advances/delete") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    await deleteVendorAdvance(db, Number(input.id), by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/dashboard-summary") {
+    return json(await dashboardSummary(db));
   }
 
   // Purchase invoices — owner + staff

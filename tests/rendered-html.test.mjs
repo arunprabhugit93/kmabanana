@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("banana merchant worker: simplified invoice-centric app", async () => {
-  const [page, layout, packageJson, index, shell, schema, auth, purchaseInvoices, saleInvoices, reports, whatsapp, branding, mastersImportExport] = await Promise.all([
+  const [page, layout, packageJson, index, shell, schema, auth, purchaseInvoices, saleInvoices, reports, whatsapp, branding, mastersImportExport, advances, dashboard, masters] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -17,6 +17,9 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
     readFile(new URL("../worker/whatsapp.ts", import.meta.url), "utf8"),
     readFile(new URL("../worker/invoiceBranding.ts", import.meta.url), "utf8"),
     readFile(new URL("../worker/mastersImportExport.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/advances.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/dashboard.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/masters.ts", import.meta.url), "utf8"),
   ]);
 
   // The Next.js app router page is unreachable in production (the Worker's
@@ -112,6 +115,42 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(mastersImportExport, /exportMaster/);
   assert.match(mastersImportExport, /importMaster/);
 
+  // Dashboard is now its own tab (not an always-visible header band), with
+  // an all-time overall position panel netting advances against pending
+  // balances.
+  assert.match(shell, /\["dashboard","Dashboard"\]/);
+  assert.match(shell, /id="dashboard" class="view active"/);
+  assert.match(shell, /Overall position/);
+  assert.match(shell, /dashboard-summary/);
+  assert.match(shell, /dPayableNet/);
+  assert.match(shell, /dReceivableNet/);
+
+  // Farmer/vendor portfolio drill-down: totals, a record-advance form, an
+  // advances list, and a transactions list that drills into invoice detail
+  // (reusing viewInvoiceModal with a "back to portfolio" callback).
+  assert.match(shell, /function viewFarmerPortfolio/);
+  assert.match(shell, /function viewVendorPortfolio/);
+  assert.match(shell, /farmer-portfolio\?id=/);
+  assert.match(shell, /vendor-portfolio\?id=/);
+  assert.match(shell, /data-portfolio-farmer/);
+  assert.match(shell, /data-portfolio-vendor/);
+  assert.match(shell, /Back to portfolio/);
+  assert.match(shell, /Record an advance/);
+
+  // Advances backend: farmer advances reuse the pre-existing farmer_payments
+  // table, vendor advances get a new table; both feed portfolio aggregation.
+  assert.match(advances, /farmerPortfolio/);
+  assert.match(advances, /vendorPortfolio/);
+  assert.match(advances, /createFarmerAdvance/);
+  assert.match(advances, /createVendorAdvance/);
+  assert.match(schema, /vendor_advances/);
+  assert.match(dashboard, /outstandingPayable/);
+  assert.match(dashboard, /outstandingReceivable/);
+
+  // Farmer/vendor master lists show pending balances net of advances.
+  assert.match(masters, /farmer_payments/);
+  assert.match(masters, /vendor_advances/);
+
   // The Worker entry wires auth, routing, and login gating together.
   assert.match(index, /\/api\/auth\/request/);
   assert.match(index, /\/api\/auth\/verify/);
@@ -121,4 +160,9 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(index, /\/api\/sale-invoices\/vehicle-load/);
   assert.match(index, /\/api\/reports\/send/);
   assert.match(index, /\/api\/masters\/import/);
+  assert.match(index, /\/api\/farmer-portfolio/);
+  assert.match(index, /\/api\/vendor-portfolio/);
+  assert.match(index, /\/api\/farmer-advances/);
+  assert.match(index, /\/api\/vendor-advances/);
+  assert.match(index, /\/api\/dashboard-summary/);
 });

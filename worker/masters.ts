@@ -4,9 +4,10 @@ import { all } from "./util";
 export async function listFarmers(db: D1Database) {
   return all(
     db,
-    `SELECT f.*, COALESCE(pi.pending, 0) AS pending
+    `SELECT f.*, COALESCE(pi.pending, 0) - COALESCE(adv.total, 0) AS pending
      FROM farmers f
      LEFT JOIN (SELECT farmer_id, SUM(pending) AS pending FROM purchase_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL) GROUP BY farmer_id) pi ON pi.farmer_id = f.id
+     LEFT JOIN (SELECT farmer_id, SUM(amount) AS total FROM farmer_payments WHERE deleted_at = '' OR deleted_at IS NULL GROUP BY farmer_id) adv ON adv.farmer_id = f.id
      WHERE f.deleted_at = '' OR f.deleted_at IS NULL
      ORDER BY f.name`
   );
@@ -15,9 +16,10 @@ export async function listFarmers(db: D1Database) {
 export async function listVendors(db: D1Database) {
   return all(
     db,
-    `SELECT v.*, COALESCE(si.pending, 0) AS pending
+    `SELECT v.*, COALESCE(si.pending, 0) - COALESCE(adv.total, 0) AS pending
      FROM vendors v
      LEFT JOIN (SELECT vendor_id, SUM(pending) AS pending FROM sale_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL) GROUP BY vendor_id) si ON si.vendor_id = v.id
+     LEFT JOIN (SELECT vendor_id, SUM(amount) AS total FROM vendor_advances WHERE deleted_at = '' OR deleted_at IS NULL GROUP BY vendor_id) adv ON adv.vendor_id = v.id
      WHERE v.deleted_at = '' OR v.deleted_at IS NULL
      ORDER BY v.name`
   );

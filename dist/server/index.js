@@ -225,16 +225,18 @@ async function recentAudit(db, limit = 60) {
 //#endregion
 //#region worker/masters.ts
 async function listFarmers(db) {
-	return all(db, `SELECT f.*, COALESCE(pi.pending, 0) AS pending
+	return all(db, `SELECT f.*, COALESCE(pi.pending, 0) - COALESCE(adv.total, 0) AS pending
      FROM farmers f
      LEFT JOIN (SELECT farmer_id, SUM(pending) AS pending FROM purchase_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL) GROUP BY farmer_id) pi ON pi.farmer_id = f.id
+     LEFT JOIN (SELECT farmer_id, SUM(amount) AS total FROM farmer_payments WHERE deleted_at = '' OR deleted_at IS NULL GROUP BY farmer_id) adv ON adv.farmer_id = f.id
      WHERE f.deleted_at = '' OR f.deleted_at IS NULL
      ORDER BY f.name`);
 }
 async function listVendors(db) {
-	return all(db, `SELECT v.*, COALESCE(si.pending, 0) AS pending
+	return all(db, `SELECT v.*, COALESCE(si.pending, 0) - COALESCE(adv.total, 0) AS pending
      FROM vendors v
      LEFT JOIN (SELECT vendor_id, SUM(pending) AS pending FROM sale_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL) GROUP BY vendor_id) si ON si.vendor_id = v.id
+     LEFT JOIN (SELECT vendor_id, SUM(amount) AS total FROM vendor_advances WHERE deleted_at = '' OR deleted_at IS NULL GROUP BY vendor_id) adv ON adv.vendor_id = v.id
      WHERE v.deleted_at = '' OR v.deleted_at IS NULL
      ORDER BY v.name`);
 }
@@ -860,13 +862,14 @@ var TABLES = [
 	"CREATE TABLE IF NOT EXISTS auth_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS staff_users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, name TEXT DEFAULT '', role TEXT NOT NULL DEFAULT 'staff', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT NOT NULL, entity_id INTEGER NOT NULL, action TEXT NOT NULL, changed_by TEXT DEFAULT '', before_json TEXT DEFAULT '', after_json TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+	"CREATE TABLE IF NOT EXISTS farmer_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, amount REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'cash', notes TEXT DEFAULT '', created_by TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+	"CREATE TABLE IF NOT EXISTS vendor_advances (id INTEGER PRIMARY KEY AUTOINCREMENT, vendor_id INTEGER NOT NULL, advance_date TEXT NOT NULL, amount REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'cash', notes TEXT DEFAULT '', created_by TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_date TEXT NOT NULL, farmer_id INTEGER, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, vendor_id INTEGER, vendor_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT NOT NULL UNIQUE, party_type TEXT NOT NULL, party_id INTEGER NOT NULL, party_name TEXT NOT NULL, from_date TEXT NOT NULL, to_date TEXT NOT NULL, invoice_date TEXT NOT NULL, total REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, pending REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, item_type TEXT NOT NULL, source_id INTEGER NOT NULL, item_date TEXT NOT NULL, description TEXT NOT NULL, quantity_kg REAL NOT NULL, rate REAL NOT NULL, amount REAL NOT NULL)",
 	"CREATE TABLE IF NOT EXISTS cutter_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, vehicle_no TEXT NOT NULL, submitted_by TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS cutter_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER NOT NULL, gross_weight_kg REAL NOT NULL, units REAL NOT NULL, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, net_weight_kg REAL NOT NULL, grade TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-	"CREATE TABLE IF NOT EXISTS farmer_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, amount REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'cash', notes TEXT DEFAULT '', created_by TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS vehicle_trips (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_date TEXT NOT NULL, vehicle_no TEXT NOT NULL, driver_name TEXT DEFAULT '', notes TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'open', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE TABLE IF NOT EXISTS trip_expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_id INTEGER NOT NULL, expense_type TEXT NOT NULL DEFAULT 'other', amount REAL NOT NULL, notes TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
 	"CREATE INDEX IF NOT EXISTS auth_otps_email_idx ON auth_otps (email, expires_at)",
@@ -879,7 +882,9 @@ var TABLES = [
 	"CREATE INDEX IF NOT EXISTS sale_invoices_vendor_idx ON sale_invoices (vendor_id)",
 	"CREATE INDEX IF NOT EXISTS sale_invoices_date_idx ON sale_invoices (invoice_date)",
 	"CREATE INDEX IF NOT EXISTS sale_invoices_vehicle_idx ON sale_invoices (vehicle_no)",
-	"CREATE INDEX IF NOT EXISTS sale_invoice_items_invoice_idx ON sale_invoice_items (invoice_id)"
+	"CREATE INDEX IF NOT EXISTS sale_invoice_items_invoice_idx ON sale_invoice_items (invoice_id)",
+	"CREATE INDEX IF NOT EXISTS farmer_payments_farmer_idx ON farmer_payments (farmer_id)",
+	"CREATE INDEX IF NOT EXISTS vendor_advances_vendor_idx ON vendor_advances (vendor_id)"
 ];
 var ADDED_COLUMNS = [
 	{
@@ -997,8 +1002,8 @@ var STYLE = `
 `;
 var CLIENT_SCRIPT = `
 const GRADES = ["1st grade", "2nd grade", "3rd grade"];
-const state = { farmers: [], vendors: [], vehicles: [], bananaTypes: [], rates: [], purchaseInvoices: [], saleInvoices: [], settings: {}, emailLogs: [], staff: [], auditLogs: [], me: null };
-const ALL_TABS = [["purchase","Purchase Invoice"],["sale","Sales Invoice"],["invoices","Invoices"],["masters","Masters"],["rates","Rates & Reports"],["staff","Staff"],["activity","Activity log"]];
+const state = { farmers: [], vendors: [], vehicles: [], bananaTypes: [], rates: [], purchaseInvoices: [], saleInvoices: [], settings: {}, emailLogs: [], staff: [], auditLogs: [], me: null, dashboard: {} };
+const ALL_TABS = [["dashboard","Dashboard"],["purchase","Purchase Invoice"],["sale","Sales Invoice"],["invoices","Invoices"],["masters","Masters"],["rates","Rates & Reports"],["staff","Staff"],["activity","Activity log"]];
 const $ = id => document.getElementById(id);
 const rs = v => "Rs " + Math.round(Number(v || 0)).toLocaleString("en-IN");
 const kg = v => Number(v || 0).toLocaleString("en-IN") + " kg";
@@ -1092,8 +1097,12 @@ async function initAuth() {
 }
 
 async function load() {
-  const data = await api("/api/state?month=" + $("month").value);
+  const [data, dashboard] = await Promise.all([
+    api("/api/state?month=" + $("month").value),
+    api("/api/dashboard-summary")
+  ]);
   Object.assign(state, data);
+  state.dashboard = dashboard;
   render();
 }
 
@@ -1233,7 +1242,7 @@ function updatePaidModal(kind, invoice) {
   openModal("Update paid - " + invoice.invoice_no, '<form id="mForm" class="sectiongap">' + fld("Paid amount", '<input name="paid" type="number" min="0" step="0.01" value="' + invoice.paid + '" required>') + '<button>Save</button></form>');
   $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/" + (kind === "purchase" ? "purchase-invoices" : "sale-invoices") + "/paid", Object.assign({ id: invoice.id }, formData(e.target))); closeModal(); showToast("Updated"); await load(); }); };
 }
-async function viewInvoiceModal(kind, id) {
+async function viewInvoiceModal(kind, id, onBack) {
   const base = kind === "purchase" ? "purchase-invoices" : "sale-invoices";
   const data = await api("/api/" + base + "/detail?id=" + id);
   const inv = data.invoice;
@@ -1243,8 +1252,61 @@ async function viewInvoiceModal(kind, id) {
     ? table(["Banana (grade)", "Units", "Gross kg", "Stem/unit", "Net kg", "Rate", "Vehicle", "Amount"], data.items.map(it => [it.banana_type + " (" + it.grade + ")", it.units, kg(it.gross_weight_kg), it.stem_reduction_per_unit, kg(it.net_weight_kg), rs(it.rate), it.vehicle_no, rs(it.amount)]))
     : table(["Banana (grade)", "Net kg", "Rate", "Amount"], data.items.map(it => [it.banana_type + " (" + it.grade + ")", kg(it.net_weight_kg), rs(it.rate), rs(it.amount)]));
   body += '<p class="subcopy" style="margin-top:10px">Total ' + rs(inv.total) + ' | Paid ' + rs(inv.paid) + ' | Pending ' + rs(inv.pending) + '</p>';
-  body += '<div class="actions" style="margin-top:10px"><a class="btn secondary small" href="' + printPath + '" target="_blank">Open print view</a></div>';
+  body += '<div class="actions" style="margin-top:10px"><a class="btn secondary small" href="' + printPath + '" target="_blank">Open print view</a>' + (onBack ? ' <button type="button" class="secondary small" id="modalBack">Back to portfolio</button>' : '') + '</div>';
   openModal(inv.invoice_no, body);
+  if (onBack) $("modalBack").onclick = () => guarded(onBack);
+}
+
+async function viewFarmerPortfolio(id) {
+  const p = await api("/api/farmer-portfolio?id=" + id);
+  const f = p.farmer;
+  let body = '<p class="subcopy">' + esc(f.phone) + (f.village ? " | " + esc(f.village) : "") + (f.email ? " | " + esc(f.email) : "") + '</p>';
+  body += '<div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0">'
+    + '<article class="metric"><span>Total invoiced</span><strong>' + rs(p.totalInvoiced) + '</strong></article>'
+    + '<article class="metric"><span>Advance paid</span><strong>' + rs(p.totalAdvance) + '</strong></article>'
+    + '<article class="metric"><span>Net balance owed</span><strong class="' + (p.netBalance > 0 ? "balance-due" : "balance-clear") + '">' + rs(p.netBalance) + '</strong></article>'
+    + '<article class="metric"><span>Invoices</span><strong>' + p.invoiceCount + '</strong></article>'
+    + '<article class="metric"><span>Total kg purchased</span><strong>' + kg(p.totalKg) + '</strong></article>'
+    + '</div>';
+  body += '<h3 style="margin:14px 0 6px">Record an advance</h3><form id="advForm" class="formgrid four">'
+    + '<input name="advance_date" type="date" value="' + todayStr + '" required>'
+    + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
+    + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
+    + '<button>Save advance</button></form>';
+  body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
+  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button>')]));
+  openModal("Farmer portfolio - " + f.name, body);
+  $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmer-advances", Object.assign({ farmer_id: id }, formData(e.target))); showToast("Advance recorded"); await viewFarmerPortfolio(id); await load(); }); };
+  $("modalBody").onclick = e => {
+    if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/farmer-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewFarmerPortfolio(id); await load(); });
+    if (e.target.dataset.viewTx) guarded(() => viewInvoiceModal("purchase", Number(e.target.dataset.viewTx), () => viewFarmerPortfolio(id)));
+  };
+}
+
+async function viewVendorPortfolio(id) {
+  const p = await api("/api/vendor-portfolio?id=" + id);
+  const v = p.vendor;
+  let body = '<p class="subcopy">' + esc(v.phone) + (v.market ? " | " + esc(v.market) : "") + (v.email ? " | " + esc(v.email) : "") + '</p>';
+  body += '<div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0">'
+    + '<article class="metric"><span>Total invoiced</span><strong>' + rs(p.totalInvoiced) + '</strong></article>'
+    + '<article class="metric"><span>Advance received</span><strong>' + rs(p.totalAdvance) + '</strong></article>'
+    + '<article class="metric"><span>Net balance due</span><strong class="' + (p.netBalance > 0 ? "balance-due" : "balance-clear") + '">' + rs(p.netBalance) + '</strong></article>'
+    + '<article class="metric"><span>Invoices</span><strong>' + p.invoiceCount + '</strong></article>'
+    + '<article class="metric"><span>Total kg sold</span><strong>' + kg(p.totalKg) + '</strong></article>'
+    + '</div>';
+  body += '<h3 style="margin:14px 0 6px">Record an advance received</h3><form id="advForm" class="formgrid four">'
+    + '<input name="advance_date" type="date" value="' + todayStr + '" required>'
+    + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
+    + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
+    + '<button>Save advance</button></form>';
+  body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
+  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Vehicle", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, inv.vehicle_no, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button>')]));
+  openModal("Buyer portfolio - " + v.name, body);
+  $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/vendor-advances", Object.assign({ vendor_id: id }, formData(e.target))); showToast("Advance recorded"); await viewVendorPortfolio(id); await load(); }); };
+  $("modalBody").onclick = e => {
+    if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/vendor-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewVendorPortfolio(id); await load(); });
+    if (e.target.dataset.viewTx) guarded(() => viewInvoiceModal("sale", Number(e.target.dataset.viewTx), () => viewVendorPortfolio(id)));
+  };
 }
 function invoiceActions(kind, x) {
   const printPath = kind === "purchase" ? "/purchase-invoice/" : "/sale-invoice/";
@@ -1311,15 +1373,23 @@ function render() {
   $("mCollect").textContent = rs(sInvoices.reduce((a, x) => a + x.pending, 0));
   $("mPayable").textContent = rs(pInvoices.reduce((a, x) => a + x.pending, 0));
 
+  const d = state.dashboard || {};
+  $("dAdvFarmer").textContent = rs(d.farmerAdvances);
+  $("dAdvVendor").textContent = rs(d.vendorAdvances);
+  $("dPayableNet").textContent = rs(d.outstandingPayable);
+  $("dReceivableNet").textContent = rs(d.outstandingReceivable);
+  $("dPaidFarmers").textContent = rs((d.purchasePaid || 0) + (d.farmerAdvances || 0));
+  $("dReceivedVendors").textContent = rs((d.salePaid || 0) + (d.vendorAdvances || 0));
+
   $("farmersTable").innerHTML = table(["Name", "Phone", "Email", "Village", "Pending payable", "Actions"], state.farmers.map(x => [
     x.name, x.phone, x.email, x.village,
     raw('<span class="' + (x.pending > 0 ? "balance-due" : "balance-clear") + '">' + rs(x.pending) + '</span>'),
-    raw('<div class="actions"><button type="button" class="secondary small" data-edit-farmer="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-farmer="' + x.id + '">Delete</button></div>')
+    raw('<div class="actions"><button type="button" class="secondary small" data-portfolio-farmer="' + x.id + '">Portfolio</button> <button type="button" class="secondary small" data-edit-farmer="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-farmer="' + x.id + '">Delete</button></div>')
   ]));
   $("vendorsTable").innerHTML = table(["Name", "Phone", "Email", "Market", "Pending collection", "Actions"], state.vendors.map(x => [
     x.name, x.phone, x.email, x.market,
     raw('<span class="' + (x.pending > 0 ? "balance-due" : "balance-clear") + '">' + rs(x.pending) + '</span>'),
-    raw('<div class="actions"><button type="button" class="secondary small" data-edit-vendor="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-vendor="' + x.id + '">Delete</button></div>')
+    raw('<div class="actions"><button type="button" class="secondary small" data-portfolio-vendor="' + x.id + '">Portfolio</button> <button type="button" class="secondary small" data-edit-vendor="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-vendor="' + x.id + '">Delete</button></div>')
   ]));
   $("vehiclesTable").innerHTML = table(["Vehicle", "Driver", "Phone", "Action"], state.vehicles.map(x => [x.vehicle_no, x.driver_name, x.phone, raw('<button type="button" class="danger small" data-del-vehicle="' + x.id + '">Remove</button>')]));
   $("bananaTypesTable").innerHTML = table(["Banana type", "Action"], state.bananaTypes.map(x => [x.name, raw('<button type="button" class="danger small" data-del-banana="' + x.id + '">Remove</button>')]));
@@ -1381,11 +1451,13 @@ $("reportSettingsForm").onsubmit = e => { e.preventDefault(); guarded(async () =
 
 $("farmersTable").onclick = e => {
   const t = e.target.dataset;
+  if (t.portfolioFarmer) guarded(() => viewFarmerPortfolio(Number(t.portfolioFarmer)));
   if (t.editFarmer) editFarmer(state.farmers.find(x => x.id === Number(t.editFarmer)));
   if (t.delFarmer && confirm("Delete this farmer? Past invoices stay on record.")) guarded(async () => { await api("/api/farmers/delete", { id: Number(t.delFarmer) }); showToast("Farmer deleted"); await load(); });
 };
 $("vendorsTable").onclick = e => {
   const t = e.target.dataset;
+  if (t.portfolioVendor) guarded(() => viewVendorPortfolio(Number(t.portfolioVendor)));
   if (t.editVendor) editVendor(state.vendors.find(x => x.id === Number(t.editVendor)));
   if (t.delVendor && confirm("Delete this buyer? Past invoices stay on record.")) guarded(async () => { await api("/api/vendors/delete", { id: Number(t.delVendor) }); showToast("Buyer deleted"); await load(); });
 };
@@ -1511,15 +1583,33 @@ var BODY = `
         </div>
       </section>
 
-    <section class="metrics">
-      <article class="metric"><span>Purchase value</span><strong id="mPurchase">Rs 0</strong></article>
-      <article class="metric"><span>Sales value</span><strong id="mSales">Rs 0</strong></article>
-      <article class="metric"><span>Margin</span><strong id="mMargin">Rs 0</strong></article>
-      <article class="metric"><span>Pending collection</span><strong id="mCollect">Rs 0</strong></article>
-      <article class="metric"><span>Pending payable</span><strong id="mPayable">Rs 0</strong></article>
+    <section id="dashboard" class="view active">
+      <div class="grid">
+        <div class="panel wide">
+          <div class="heading"><div><p class="eyebrow">This month</p><h2>Snapshot</h2><p class="subcopy">Follows the month picker above.</p></div></div>
+          <div class="metrics">
+            <article class="metric"><span>Purchase value</span><strong id="mPurchase">Rs 0</strong></article>
+            <article class="metric"><span>Sales value</span><strong id="mSales">Rs 0</strong></article>
+            <article class="metric"><span>Margin</span><strong id="mMargin">Rs 0</strong></article>
+            <article class="metric"><span>Pending collection</span><strong id="mCollect">Rs 0</strong></article>
+            <article class="metric"><span>Pending payable</span><strong id="mPayable">Rs 0</strong></article>
+          </div>
+        </div>
+        <div class="panel wide">
+          <div class="heading"><div><p class="eyebrow">All time</p><h2>Overall position</h2><p class="subcopy">Outstanding balances are net of any advances already paid or received.</p></div></div>
+          <div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+            <article class="metric"><span>Advances paid to farmers</span><strong id="dAdvFarmer">Rs 0</strong></article>
+            <article class="metric"><span>Advances received from buyers</span><strong id="dAdvVendor">Rs 0</strong></article>
+            <article class="metric"><span>Outstanding payable (net)</span><strong id="dPayableNet">Rs 0</strong></article>
+            <article class="metric"><span>Outstanding receivable (net)</span><strong id="dReceivableNet">Rs 0</strong></article>
+            <article class="metric"><span>Total paid to farmers</span><strong id="dPaidFarmers">Rs 0</strong></article>
+            <article class="metric"><span>Total received from buyers</span><strong id="dReceivedVendors">Rs 0</strong></article>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section id="purchase" class="view active">
+    <section id="purchase" class="view">
       <div class="grid">
         <div class="panel wide">
           <div class="heading"><div><p class="eyebrow">Purchase invoice</p><h2>Buy from farmer</h2><p class="subcopy">Pick the farmer, add a line per banana type + grade (each can have its own stem reduction, units, and vehicle), verify the totals below, then save. The invoice prints, emails, and WhatsApps to the farmer automatically.</p></div></div>
@@ -1804,6 +1894,99 @@ async function importMaster(db, type, rows, changedBy) {
 	return count;
 }
 //#endregion
+//#region worker/advances.ts
+async function createFarmerAdvance(db, input, changedBy) {
+	await writeAudit(db, "farmer_advance", (await db.prepare("INSERT INTO farmer_payments (payment_date, farmer_id, amount, mode, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)").bind(input.advance_date, Number(input.farmer_id), Number(input.amount), String(input.mode || "cash"), input.notes || "", changedBy).run()).meta.last_row_id, "create", changedBy, null, input);
+}
+async function deleteFarmerAdvance(db, id, changedBy) {
+	const before = await db.prepare("SELECT * FROM farmer_payments WHERE id = ?").bind(id).first();
+	await db.prepare("UPDATE farmer_payments SET deleted_at = ? WHERE id = ?").bind((/* @__PURE__ */ new Date()).toISOString(), id).run();
+	await writeAudit(db, "farmer_advance", id, "delete", changedBy, before, null);
+}
+async function createVendorAdvance(db, input, changedBy) {
+	await writeAudit(db, "vendor_advance", (await db.prepare("INSERT INTO vendor_advances (advance_date, vendor_id, amount, mode, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)").bind(input.advance_date, Number(input.vendor_id), Number(input.amount), String(input.mode || "cash"), input.notes || "", changedBy).run()).meta.last_row_id, "create", changedBy, null, input);
+}
+async function deleteVendorAdvance(db, id, changedBy) {
+	const before = await db.prepare("SELECT * FROM vendor_advances WHERE id = ?").bind(id).first();
+	await db.prepare("UPDATE vendor_advances SET deleted_at = ? WHERE id = ?").bind((/* @__PURE__ */ new Date()).toISOString(), id).run();
+	await writeAudit(db, "vendor_advance", id, "delete", changedBy, before, null);
+}
+async function farmerPortfolio(db, farmerId) {
+	const farmer = await db.prepare("SELECT * FROM farmers WHERE id = ?").bind(farmerId).first();
+	const invoices = await all(db, "SELECT * FROM purchase_invoices WHERE farmer_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date DESC, id DESC", farmerId);
+	const advances = await all(db, "SELECT id, payment_date AS advance_date, amount, mode, notes FROM farmer_payments WHERE farmer_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY payment_date DESC, id DESC", farmerId);
+	const kgRow = await db.prepare(`SELECT COALESCE(SUM(pi.net_weight_kg), 0) AS kg FROM purchase_invoice_items pi
+     JOIN purchase_invoices p ON p.id = pi.invoice_id
+     WHERE p.farmer_id = ? AND p.status != 'void' AND (p.deleted_at = '' OR p.deleted_at IS NULL)`).bind(farmerId).first();
+	const activeInvoices = invoices.filter((inv) => inv.status !== "void");
+	const totalInvoiced = activeInvoices.reduce((sum, inv) => sum + inv.total, 0);
+	const totalPending = activeInvoices.reduce((sum, inv) => sum + inv.pending, 0);
+	const totalAdvance = advances.reduce((sum, a) => sum + Number(a.amount), 0);
+	return {
+		farmer,
+		invoices,
+		advances,
+		totalInvoiced,
+		totalPending,
+		totalAdvance,
+		netBalance: totalPending - totalAdvance,
+		totalKg: Number(kgRow?.kg || 0),
+		invoiceCount: activeInvoices.length
+	};
+}
+async function vendorPortfolio(db, vendorId) {
+	const vendor = await db.prepare("SELECT * FROM vendors WHERE id = ?").bind(vendorId).first();
+	const invoices = await all(db, "SELECT * FROM sale_invoices WHERE vendor_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date DESC, id DESC", vendorId);
+	const advances = await all(db, "SELECT id, advance_date, amount, mode, notes FROM vendor_advances WHERE vendor_id = ? AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY advance_date DESC, id DESC", vendorId);
+	const kgRow = await db.prepare(`SELECT COALESCE(SUM(si.net_weight_kg), 0) AS kg FROM sale_invoice_items si
+     JOIN sale_invoices s ON s.id = si.invoice_id
+     WHERE s.vendor_id = ? AND s.status != 'void' AND (s.deleted_at = '' OR s.deleted_at IS NULL)`).bind(vendorId).first();
+	const activeInvoices = invoices.filter((inv) => inv.status !== "void");
+	const totalInvoiced = activeInvoices.reduce((sum, inv) => sum + inv.total, 0);
+	const totalPending = activeInvoices.reduce((sum, inv) => sum + inv.pending, 0);
+	const totalAdvance = advances.reduce((sum, a) => sum + Number(a.amount), 0);
+	return {
+		vendor,
+		invoices,
+		advances,
+		totalInvoiced,
+		totalPending,
+		totalAdvance,
+		netBalance: totalPending - totalAdvance,
+		totalKg: Number(kgRow?.kg || 0),
+		invoiceCount: activeInvoices.length
+	};
+}
+//#endregion
+//#region worker/dashboard.ts
+async function dashboardSummary(db) {
+	const [invoiceTotals, advanceTotals] = await Promise.all([db.prepare(`SELECT
+         (SELECT COALESCE(SUM(total), 0) FROM purchase_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL)) AS purchaseTotal,
+         (SELECT COALESCE(SUM(paid), 0) FROM purchase_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL)) AS purchasePaid,
+         (SELECT COALESCE(SUM(pending), 0) FROM purchase_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL)) AS purchasePending,
+         (SELECT COALESCE(SUM(total), 0) FROM sale_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL)) AS saleTotal,
+         (SELECT COALESCE(SUM(paid), 0) FROM sale_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL)) AS salePaid,
+         (SELECT COALESCE(SUM(pending), 0) FROM sale_invoices WHERE status != 'void' AND (deleted_at = '' OR deleted_at IS NULL)) AS salePending`).first(), db.prepare(`SELECT
+         (SELECT COALESCE(SUM(amount), 0) FROM farmer_payments WHERE deleted_at = '' OR deleted_at IS NULL) AS farmerAdvances,
+         (SELECT COALESCE(SUM(amount), 0) FROM vendor_advances WHERE deleted_at = '' OR deleted_at IS NULL) AS vendorAdvances`).first()]);
+	const purchasePending = Number(invoiceTotals?.purchasePending || 0);
+	const salePending = Number(invoiceTotals?.salePending || 0);
+	const farmerAdvances = Number(advanceTotals?.farmerAdvances || 0);
+	const vendorAdvances = Number(advanceTotals?.vendorAdvances || 0);
+	return {
+		purchaseTotal: Number(invoiceTotals?.purchaseTotal || 0),
+		purchasePaid: Number(invoiceTotals?.purchasePaid || 0),
+		purchasePending,
+		saleTotal: Number(invoiceTotals?.saleTotal || 0),
+		salePaid: Number(invoiceTotals?.salePaid || 0),
+		salePending,
+		farmerAdvances,
+		vendorAdvances,
+		outstandingPayable: purchasePending - farmerAdvances,
+		outstandingReceivable: salePending - vendorAdvances
+	};
+}
+//#endregion
 //#region worker/index.ts
 async function handleApi(request, env, url) {
 	try {
@@ -1910,6 +2093,33 @@ async function handleApiRoute(request, env, url) {
 		if (denied) return denied;
 		return json({ count: await importMaster(db, String(input.type || "farmers"), Array.isArray(input.rows) ? input.rows : [], by) });
 	}
+	if (url.pathname === "/api/farmer-portfolio") return json(await farmerPortfolio(db, Number(url.searchParams.get("id") || 0)));
+	if (url.pathname === "/api/vendor-portfolio") return json(await vendorPortfolio(db, Number(url.searchParams.get("id") || 0)));
+	if (url.pathname === "/api/farmer-advances") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await createFarmerAdvance(db, input, by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/farmer-advances/delete") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await deleteFarmerAdvance(db, Number(input.id), by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/vendor-advances") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await createVendorAdvance(db, input, by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/vendor-advances/delete") {
+		const denied = requireRole(user, ["owner", "staff"]);
+		if (denied) return denied;
+		await deleteVendorAdvance(db, Number(input.id), by);
+		return json({ ok: true });
+	}
+	if (url.pathname === "/api/dashboard-summary") return json(await dashboardSummary(db));
 	if (url.pathname === "/api/purchase-invoices/create") {
 		const denied = requireRole(user, ["owner", "staff"]);
 		if (denied) return denied;

@@ -8,8 +8,8 @@ const STYLE = `
 
 const CLIENT_SCRIPT = `
 const GRADES = ["1st grade", "2nd grade", "3rd grade"];
-const state = { farmers: [], vendors: [], vehicles: [], bananaTypes: [], rates: [], purchaseInvoices: [], saleInvoices: [], settings: {}, emailLogs: [], staff: [], auditLogs: [], me: null };
-const ALL_TABS = [["purchase","Purchase Invoice"],["sale","Sales Invoice"],["invoices","Invoices"],["masters","Masters"],["rates","Rates & Reports"],["staff","Staff"],["activity","Activity log"]];
+const state = { farmers: [], vendors: [], vehicles: [], bananaTypes: [], rates: [], purchaseInvoices: [], saleInvoices: [], settings: {}, emailLogs: [], staff: [], auditLogs: [], me: null, dashboard: {} };
+const ALL_TABS = [["dashboard","Dashboard"],["purchase","Purchase Invoice"],["sale","Sales Invoice"],["invoices","Invoices"],["masters","Masters"],["rates","Rates & Reports"],["staff","Staff"],["activity","Activity log"]];
 const $ = id => document.getElementById(id);
 const rs = v => "Rs " + Math.round(Number(v || 0)).toLocaleString("en-IN");
 const kg = v => Number(v || 0).toLocaleString("en-IN") + " kg";
@@ -103,8 +103,12 @@ async function initAuth() {
 }
 
 async function load() {
-  const data = await api("/api/state?month=" + $("month").value);
+  const [data, dashboard] = await Promise.all([
+    api("/api/state?month=" + $("month").value),
+    api("/api/dashboard-summary")
+  ]);
   Object.assign(state, data);
+  state.dashboard = dashboard;
   render();
 }
 
@@ -244,7 +248,7 @@ function updatePaidModal(kind, invoice) {
   openModal("Update paid - " + invoice.invoice_no, '<form id="mForm" class="sectiongap">' + fld("Paid amount", '<input name="paid" type="number" min="0" step="0.01" value="' + invoice.paid + '" required>') + '<button>Save</button></form>');
   $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/" + (kind === "purchase" ? "purchase-invoices" : "sale-invoices") + "/paid", Object.assign({ id: invoice.id }, formData(e.target))); closeModal(); showToast("Updated"); await load(); }); };
 }
-async function viewInvoiceModal(kind, id) {
+async function viewInvoiceModal(kind, id, onBack) {
   const base = kind === "purchase" ? "purchase-invoices" : "sale-invoices";
   const data = await api("/api/" + base + "/detail?id=" + id);
   const inv = data.invoice;
@@ -254,8 +258,61 @@ async function viewInvoiceModal(kind, id) {
     ? table(["Banana (grade)", "Units", "Gross kg", "Stem/unit", "Net kg", "Rate", "Vehicle", "Amount"], data.items.map(it => [it.banana_type + " (" + it.grade + ")", it.units, kg(it.gross_weight_kg), it.stem_reduction_per_unit, kg(it.net_weight_kg), rs(it.rate), it.vehicle_no, rs(it.amount)]))
     : table(["Banana (grade)", "Net kg", "Rate", "Amount"], data.items.map(it => [it.banana_type + " (" + it.grade + ")", kg(it.net_weight_kg), rs(it.rate), rs(it.amount)]));
   body += '<p class="subcopy" style="margin-top:10px">Total ' + rs(inv.total) + ' | Paid ' + rs(inv.paid) + ' | Pending ' + rs(inv.pending) + '</p>';
-  body += '<div class="actions" style="margin-top:10px"><a class="btn secondary small" href="' + printPath + '" target="_blank">Open print view</a></div>';
+  body += '<div class="actions" style="margin-top:10px"><a class="btn secondary small" href="' + printPath + '" target="_blank">Open print view</a>' + (onBack ? ' <button type="button" class="secondary small" id="modalBack">Back to portfolio</button>' : '') + '</div>';
   openModal(inv.invoice_no, body);
+  if (onBack) $("modalBack").onclick = () => guarded(onBack);
+}
+
+async function viewFarmerPortfolio(id) {
+  const p = await api("/api/farmer-portfolio?id=" + id);
+  const f = p.farmer;
+  let body = '<p class="subcopy">' + esc(f.phone) + (f.village ? " | " + esc(f.village) : "") + (f.email ? " | " + esc(f.email) : "") + '</p>';
+  body += '<div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0">'
+    + '<article class="metric"><span>Total invoiced</span><strong>' + rs(p.totalInvoiced) + '</strong></article>'
+    + '<article class="metric"><span>Advance paid</span><strong>' + rs(p.totalAdvance) + '</strong></article>'
+    + '<article class="metric"><span>Net balance owed</span><strong class="' + (p.netBalance > 0 ? "balance-due" : "balance-clear") + '">' + rs(p.netBalance) + '</strong></article>'
+    + '<article class="metric"><span>Invoices</span><strong>' + p.invoiceCount + '</strong></article>'
+    + '<article class="metric"><span>Total kg purchased</span><strong>' + kg(p.totalKg) + '</strong></article>'
+    + '</div>';
+  body += '<h3 style="margin:14px 0 6px">Record an advance</h3><form id="advForm" class="formgrid four">'
+    + '<input name="advance_date" type="date" value="' + todayStr + '" required>'
+    + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
+    + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
+    + '<button>Save advance</button></form>';
+  body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
+  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button>')]));
+  openModal("Farmer portfolio - " + f.name, body);
+  $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmer-advances", Object.assign({ farmer_id: id }, formData(e.target))); showToast("Advance recorded"); await viewFarmerPortfolio(id); await load(); }); };
+  $("modalBody").onclick = e => {
+    if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/farmer-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewFarmerPortfolio(id); await load(); });
+    if (e.target.dataset.viewTx) guarded(() => viewInvoiceModal("purchase", Number(e.target.dataset.viewTx), () => viewFarmerPortfolio(id)));
+  };
+}
+
+async function viewVendorPortfolio(id) {
+  const p = await api("/api/vendor-portfolio?id=" + id);
+  const v = p.vendor;
+  let body = '<p class="subcopy">' + esc(v.phone) + (v.market ? " | " + esc(v.market) : "") + (v.email ? " | " + esc(v.email) : "") + '</p>';
+  body += '<div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0">'
+    + '<article class="metric"><span>Total invoiced</span><strong>' + rs(p.totalInvoiced) + '</strong></article>'
+    + '<article class="metric"><span>Advance received</span><strong>' + rs(p.totalAdvance) + '</strong></article>'
+    + '<article class="metric"><span>Net balance due</span><strong class="' + (p.netBalance > 0 ? "balance-due" : "balance-clear") + '">' + rs(p.netBalance) + '</strong></article>'
+    + '<article class="metric"><span>Invoices</span><strong>' + p.invoiceCount + '</strong></article>'
+    + '<article class="metric"><span>Total kg sold</span><strong>' + kg(p.totalKg) + '</strong></article>'
+    + '</div>';
+  body += '<h3 style="margin:14px 0 6px">Record an advance received</h3><form id="advForm" class="formgrid four">'
+    + '<input name="advance_date" type="date" value="' + todayStr + '" required>'
+    + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
+    + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
+    + '<button>Save advance</button></form>';
+  body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
+  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Vehicle", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, inv.vehicle_no, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button>')]));
+  openModal("Buyer portfolio - " + v.name, body);
+  $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/vendor-advances", Object.assign({ vendor_id: id }, formData(e.target))); showToast("Advance recorded"); await viewVendorPortfolio(id); await load(); }); };
+  $("modalBody").onclick = e => {
+    if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/vendor-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewVendorPortfolio(id); await load(); });
+    if (e.target.dataset.viewTx) guarded(() => viewInvoiceModal("sale", Number(e.target.dataset.viewTx), () => viewVendorPortfolio(id)));
+  };
 }
 function invoiceActions(kind, x) {
   const printPath = kind === "purchase" ? "/purchase-invoice/" : "/sale-invoice/";
@@ -322,15 +379,23 @@ function render() {
   $("mCollect").textContent = rs(sInvoices.reduce((a, x) => a + x.pending, 0));
   $("mPayable").textContent = rs(pInvoices.reduce((a, x) => a + x.pending, 0));
 
+  const d = state.dashboard || {};
+  $("dAdvFarmer").textContent = rs(d.farmerAdvances);
+  $("dAdvVendor").textContent = rs(d.vendorAdvances);
+  $("dPayableNet").textContent = rs(d.outstandingPayable);
+  $("dReceivableNet").textContent = rs(d.outstandingReceivable);
+  $("dPaidFarmers").textContent = rs((d.purchasePaid || 0) + (d.farmerAdvances || 0));
+  $("dReceivedVendors").textContent = rs((d.salePaid || 0) + (d.vendorAdvances || 0));
+
   $("farmersTable").innerHTML = table(["Name", "Phone", "Email", "Village", "Pending payable", "Actions"], state.farmers.map(x => [
     x.name, x.phone, x.email, x.village,
     raw('<span class="' + (x.pending > 0 ? "balance-due" : "balance-clear") + '">' + rs(x.pending) + '</span>'),
-    raw('<div class="actions"><button type="button" class="secondary small" data-edit-farmer="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-farmer="' + x.id + '">Delete</button></div>')
+    raw('<div class="actions"><button type="button" class="secondary small" data-portfolio-farmer="' + x.id + '">Portfolio</button> <button type="button" class="secondary small" data-edit-farmer="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-farmer="' + x.id + '">Delete</button></div>')
   ]));
   $("vendorsTable").innerHTML = table(["Name", "Phone", "Email", "Market", "Pending collection", "Actions"], state.vendors.map(x => [
     x.name, x.phone, x.email, x.market,
     raw('<span class="' + (x.pending > 0 ? "balance-due" : "balance-clear") + '">' + rs(x.pending) + '</span>'),
-    raw('<div class="actions"><button type="button" class="secondary small" data-edit-vendor="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-vendor="' + x.id + '">Delete</button></div>')
+    raw('<div class="actions"><button type="button" class="secondary small" data-portfolio-vendor="' + x.id + '">Portfolio</button> <button type="button" class="secondary small" data-edit-vendor="' + x.id + '">Edit</button> <button type="button" class="danger small" data-del-vendor="' + x.id + '">Delete</button></div>')
   ]));
   $("vehiclesTable").innerHTML = table(["Vehicle", "Driver", "Phone", "Action"], state.vehicles.map(x => [x.vehicle_no, x.driver_name, x.phone, raw('<button type="button" class="danger small" data-del-vehicle="' + x.id + '">Remove</button>')]));
   $("bananaTypesTable").innerHTML = table(["Banana type", "Action"], state.bananaTypes.map(x => [x.name, raw('<button type="button" class="danger small" data-del-banana="' + x.id + '">Remove</button>')]));
@@ -392,11 +457,13 @@ $("reportSettingsForm").onsubmit = e => { e.preventDefault(); guarded(async () =
 
 $("farmersTable").onclick = e => {
   const t = e.target.dataset;
+  if (t.portfolioFarmer) guarded(() => viewFarmerPortfolio(Number(t.portfolioFarmer)));
   if (t.editFarmer) editFarmer(state.farmers.find(x => x.id === Number(t.editFarmer)));
   if (t.delFarmer && confirm("Delete this farmer? Past invoices stay on record.")) guarded(async () => { await api("/api/farmers/delete", { id: Number(t.delFarmer) }); showToast("Farmer deleted"); await load(); });
 };
 $("vendorsTable").onclick = e => {
   const t = e.target.dataset;
+  if (t.portfolioVendor) guarded(() => viewVendorPortfolio(Number(t.portfolioVendor)));
   if (t.editVendor) editVendor(state.vendors.find(x => x.id === Number(t.editVendor)));
   if (t.delVendor && confirm("Delete this buyer? Past invoices stay on record.")) guarded(async () => { await api("/api/vendors/delete", { id: Number(t.delVendor) }); showToast("Buyer deleted"); await load(); });
 };
@@ -523,15 +590,33 @@ const BODY = `
         </div>
       </section>
 
-    <section class="metrics">
-      <article class="metric"><span>Purchase value</span><strong id="mPurchase">Rs 0</strong></article>
-      <article class="metric"><span>Sales value</span><strong id="mSales">Rs 0</strong></article>
-      <article class="metric"><span>Margin</span><strong id="mMargin">Rs 0</strong></article>
-      <article class="metric"><span>Pending collection</span><strong id="mCollect">Rs 0</strong></article>
-      <article class="metric"><span>Pending payable</span><strong id="mPayable">Rs 0</strong></article>
+    <section id="dashboard" class="view active">
+      <div class="grid">
+        <div class="panel wide">
+          <div class="heading"><div><p class="eyebrow">This month</p><h2>Snapshot</h2><p class="subcopy">Follows the month picker above.</p></div></div>
+          <div class="metrics">
+            <article class="metric"><span>Purchase value</span><strong id="mPurchase">Rs 0</strong></article>
+            <article class="metric"><span>Sales value</span><strong id="mSales">Rs 0</strong></article>
+            <article class="metric"><span>Margin</span><strong id="mMargin">Rs 0</strong></article>
+            <article class="metric"><span>Pending collection</span><strong id="mCollect">Rs 0</strong></article>
+            <article class="metric"><span>Pending payable</span><strong id="mPayable">Rs 0</strong></article>
+          </div>
+        </div>
+        <div class="panel wide">
+          <div class="heading"><div><p class="eyebrow">All time</p><h2>Overall position</h2><p class="subcopy">Outstanding balances are net of any advances already paid or received.</p></div></div>
+          <div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+            <article class="metric"><span>Advances paid to farmers</span><strong id="dAdvFarmer">Rs 0</strong></article>
+            <article class="metric"><span>Advances received from buyers</span><strong id="dAdvVendor">Rs 0</strong></article>
+            <article class="metric"><span>Outstanding payable (net)</span><strong id="dPayableNet">Rs 0</strong></article>
+            <article class="metric"><span>Outstanding receivable (net)</span><strong id="dReceivableNet">Rs 0</strong></article>
+            <article class="metric"><span>Total paid to farmers</span><strong id="dPaidFarmers">Rs 0</strong></article>
+            <article class="metric"><span>Total received from buyers</span><strong id="dReceivedVendors">Rs 0</strong></article>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section id="purchase" class="view active">
+    <section id="purchase" class="view">
       <div class="grid">
         <div class="panel wide">
           <div class="heading"><div><p class="eyebrow">Purchase invoice</p><h2>Buy from farmer</h2><p class="subcopy">Pick the farmer, add a line per banana type + grade (each can have its own stem reduction, units, and vehicle), verify the totals below, then save. The invoice prints, emails, and WhatsApps to the farmer automatically.</p></div></div>

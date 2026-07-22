@@ -25,6 +25,12 @@ const TABLES = [
   "CREATE TABLE IF NOT EXISTS auth_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS staff_users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, name TEXT DEFAULT '', role TEXT NOT NULL DEFAULT 'staff', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT NOT NULL, entity_id INTEGER NOT NULL, action TEXT NOT NULL, changed_by TEXT DEFAULT '', before_json TEXT DEFAULT '', after_json TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  // Advance payments: money given to a farmer / received from a vendor
+  // outside of per-invoice paid tracking, netted off in their portfolio
+  // view. farmer_payments predates the invoice-centric rebuild but has
+  // exactly this shape, so it's reused here rather than duplicated.
+  "CREATE TABLE IF NOT EXISTS farmer_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, amount REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'cash', notes TEXT DEFAULT '', created_by TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "CREATE TABLE IF NOT EXISTS vendor_advances (id INTEGER PRIMARY KEY AUTOINCREMENT, vendor_id INTEGER NOT NULL, advance_date TEXT NOT NULL, amount REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'cash', notes TEXT DEFAULT '', created_by TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   // legacy (kept only so any existing data stays reachable)
   "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_date TEXT NOT NULL, farmer_id INTEGER, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, vendor_id INTEGER, vendor_name TEXT NOT NULL, banana_type TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '1st grade', bunches REAL NOT NULL DEFAULT 0, gross_weight_kg REAL NOT NULL DEFAULT 0, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, weight_kg REAL NOT NULL, rate REAL NOT NULL, paid REAL NOT NULL DEFAULT 0, vehicle_no TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -32,7 +38,6 @@ const TABLES = [
   "CREATE TABLE IF NOT EXISTS invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, item_type TEXT NOT NULL, source_id INTEGER NOT NULL, item_date TEXT NOT NULL, description TEXT NOT NULL, quantity_kg REAL NOT NULL, rate REAL NOT NULL, amount REAL NOT NULL)",
   "CREATE TABLE IF NOT EXISTS cutter_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, farmer_name TEXT NOT NULL, banana_type TEXT NOT NULL, vehicle_no TEXT NOT NULL, submitted_by TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS cutter_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER NOT NULL, gross_weight_kg REAL NOT NULL, units REAL NOT NULL, stem_reduction_per_unit REAL NOT NULL DEFAULT 0, net_weight_kg REAL NOT NULL, grade TEXT NOT NULL, notes TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-  "CREATE TABLE IF NOT EXISTS farmer_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_date TEXT NOT NULL, farmer_id INTEGER NOT NULL, amount REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'cash', notes TEXT DEFAULT '', created_by TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS vehicle_trips (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_date TEXT NOT NULL, vehicle_no TEXT NOT NULL, driver_name TEXT DEFAULT '', notes TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'open', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE TABLE IF NOT EXISTS trip_expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_id INTEGER NOT NULL, expense_type TEXT NOT NULL DEFAULT 'other', amount REAL NOT NULL, notes TEXT DEFAULT '', deleted_at TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
   "CREATE INDEX IF NOT EXISTS auth_otps_email_idx ON auth_otps (email, expires_at)",
@@ -45,7 +50,9 @@ const TABLES = [
   "CREATE INDEX IF NOT EXISTS sale_invoices_vendor_idx ON sale_invoices (vendor_id)",
   "CREATE INDEX IF NOT EXISTS sale_invoices_date_idx ON sale_invoices (invoice_date)",
   "CREATE INDEX IF NOT EXISTS sale_invoices_vehicle_idx ON sale_invoices (vehicle_no)",
-  "CREATE INDEX IF NOT EXISTS sale_invoice_items_invoice_idx ON sale_invoice_items (invoice_id)"
+  "CREATE INDEX IF NOT EXISTS sale_invoice_items_invoice_idx ON sale_invoice_items (invoice_id)",
+  "CREATE INDEX IF NOT EXISTS farmer_payments_farmer_idx ON farmer_payments (farmer_id)",
+  "CREATE INDEX IF NOT EXISTS vendor_advances_vendor_idx ON vendor_advances (vendor_id)"
 ];
 
 // Columns added after the tables above first shipped. SQLite/D1 has no

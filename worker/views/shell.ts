@@ -45,8 +45,6 @@ function vendorOptions() { return '<option value="">Select buyer</option>' + sta
 function vehicleOptions() { return '<option value="">Select vehicle</option>' + state.vehicles.map(x => '<option value="' + esc(x.vehicle_no) + '">' + esc(x.vehicle_no) + (x.driver_name ? " - " + esc(x.driver_name) : "") + '</option>').join(""); }
 function bananaOptions() { return state.bananaTypes.map(x => '<option>' + esc(x.name) + '</option>').join(""); }
 function gradeOptions() { return GRADES.map(g => '<option>' + g + '</option>').join(""); }
-function farmerOptionsWith(sel) { return state.farmers.map(x => '<option value="' + x.id + '"' + (x.id === sel ? " selected" : "") + '>' + esc(x.name) + '</option>').join(""); }
-function vendorOptionsWith(sel) { return state.vendors.map(x => '<option value="' + x.id + '"' + (x.id === sel ? " selected" : "") + '>' + esc(x.name) + '</option>').join(""); }
 function bananaOptionsWith(sel) { return state.bananaTypes.map(x => '<option' + (x.name === sel ? " selected" : "") + '>' + esc(x.name) + '</option>').join(""); }
 function gradeOptionsWith(sel) { return GRADES.map(g => '<option' + (g === sel ? " selected" : "") + '>' + g + '</option>').join(""); }
 // Keeps a <select>'s current choice across a full option-list refresh

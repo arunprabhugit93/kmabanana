@@ -15,7 +15,6 @@
     "deploy": "wrangler deploy --config wrangler.deploy.jsonc"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6"

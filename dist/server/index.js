@@ -931,31 +931,8 @@ async function ensureDb(db) {
 	await ensureColumns(db);
 	await ensureBananaRatesGrade(db);
 	await db.prepare("CREATE INDEX IF NOT EXISTS banana_rates_lookup_idx ON banana_rates (rate_date, banana_type, grade)").run();
-	const count = await db.prepare("SELECT COUNT(*) AS count FROM farmers").first();
-	if (Number(count?.count || 0) === 0) await db.batch([
-		db.prepare("INSERT INTO farmers (name, phone, village, address) VALUES (?, ?, ?, ?)").bind("Kumar Farms", "9876543210", "Pollachi", "North field road"),
-		db.prepare("INSERT INTO farmers (name, phone, village, address) VALUES (?, ?, ?, ?)").bind("Selvi Garden", "9876501234", "Anaimalai", "Canal street"),
-		db.prepare("INSERT INTO vendors (name, phone, market, address) VALUES (?, ?, ?, ?)").bind("Coimbatore Market", "9988776655", "Coimbatore", "Wholesale lane"),
-		db.prepare("INSERT INTO vendors (name, phone, market, address) VALUES (?, ?, ?, ?)").bind("Town Fruit Traders", "8877665544", "Tiruppur", "Market road")
-	]);
 	const bananaTypeCount = await db.prepare("SELECT COUNT(*) AS count FROM banana_types").first();
-	if (Number(bananaTypeCount?.count || 0) === 0) {
-		await db.batch(BANANAS.map((banana) => db.prepare("INSERT INTO banana_types (name) VALUES (?)").bind(banana)));
-		const day = today();
-		await db.batch(BANANAS.map((banana, idx) => db.prepare("INSERT INTO banana_rates (rate_date, banana_type, grade, buy_rate, sell_rate) VALUES (?, ?, '1st grade', ?, ?)").bind(day, banana, [
-			42,
-			28,
-			36,
-			58
-		][idx], [
-			49,
-			34,
-			43,
-			67
-		][idx])));
-	}
-	const vehicleCount = await db.prepare("SELECT COUNT(*) AS count FROM vehicles").first();
-	if (Number(vehicleCount?.count || 0) === 0) await db.batch([db.prepare("INSERT INTO vehicles (vehicle_no, driver_name, phone) VALUES (?, ?, ?)").bind("TN 38 AB 4421", "Driver 1", ""), db.prepare("INSERT INTO vehicles (vehicle_no, driver_name, phone) VALUES (?, ?, ?)").bind("TN 39 CY 7188", "Driver 2", "")]);
+	if (Number(bananaTypeCount?.count || 0) === 0) await db.batch(BANANAS.map((banana) => db.prepare("INSERT INTO banana_types (name) VALUES (?)").bind(banana)));
 }
 //#endregion
 //#region worker/state.ts
@@ -1039,8 +1016,6 @@ function vendorOptions() { return '<option value="">Select buyer</option>' + sta
 function vehicleOptions() { return '<option value="">Select vehicle</option>' + state.vehicles.map(x => '<option value="' + esc(x.vehicle_no) + '">' + esc(x.vehicle_no) + (x.driver_name ? " - " + esc(x.driver_name) : "") + '</option>').join(""); }
 function bananaOptions() { return state.bananaTypes.map(x => '<option>' + esc(x.name) + '</option>').join(""); }
 function gradeOptions() { return GRADES.map(g => '<option>' + g + '</option>').join(""); }
-function farmerOptionsWith(sel) { return state.farmers.map(x => '<option value="' + x.id + '"' + (x.id === sel ? " selected" : "") + '>' + esc(x.name) + '</option>').join(""); }
-function vendorOptionsWith(sel) { return state.vendors.map(x => '<option value="' + x.id + '"' + (x.id === sel ? " selected" : "") + '>' + esc(x.name) + '</option>').join(""); }
 function bananaOptionsWith(sel) { return state.bananaTypes.map(x => '<option' + (x.name === sel ? " selected" : "") + '>' + esc(x.name) + '</option>').join(""); }
 function gradeOptionsWith(sel) { return GRADES.map(g => '<option' + (g === sel ? " selected" : "") + '>' + g + '</option>').join(""); }
 // Keeps a <select>'s current choice across a full option-list refresh

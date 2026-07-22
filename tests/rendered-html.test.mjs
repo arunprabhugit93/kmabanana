@@ -78,6 +78,14 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(schema, /UNIQUE\(rate_date, banana_type, grade\)/);
   assert.match(schema, /ALTER TABLE farmers ADD COLUMN email/);
 
+  // A fresh production database must not get fake demo farmers/vendors/
+  // vehicles/rates auto-inserted -- only the generic banana-type list is
+  // seeded, since that's a produce category, not a customer record.
+  assert.doesNotMatch(schema, /Kumar Farms|Selvi Garden|Coimbatore Market|Town Fruit Traders/);
+  const ensureDbBody = schema.match(/export async function ensureDb[\s\S]*/)[0];
+  assert.doesNotMatch(ensureDbBody, /INSERT INTO farmers|INSERT INTO vendors|INSERT INTO vehicles/);
+  assert.match(ensureDbBody, /INSERT INTO banana_types/);
+
   // Purchase invoices: multi-line, stem-weight reduction, grade, per-line
   // vehicle, printable, and sent automatically on save.
   assert.match(purchaseInvoices, /stem_reduction_per_unit/);

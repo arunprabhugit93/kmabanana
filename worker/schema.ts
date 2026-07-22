@@ -1,4 +1,4 @@
-import { BANANAS, today } from "./util";
+import { BANANAS } from "./util";
 
 // Tables below marked "legacy" belonged to an earlier version of the app
 // (daily purchase/sale entries + a separate cutter-approval workflow +
@@ -99,28 +99,14 @@ export async function ensureDb(db: D1Database) {
   await ensureBananaRatesGrade(db);
   await db.prepare("CREATE INDEX IF NOT EXISTS banana_rates_lookup_idx ON banana_rates (rate_date, banana_type, grade)").run();
 
-  const count = await db.prepare("SELECT COUNT(*) AS count FROM farmers").first<{ count: number }>();
-  if (Number(count?.count || 0) === 0) {
-    await db.batch([
-      db.prepare("INSERT INTO farmers (name, phone, village, address) VALUES (?, ?, ?, ?)").bind("Kumar Farms", "9876543210", "Pollachi", "North field road"),
-      db.prepare("INSERT INTO farmers (name, phone, village, address) VALUES (?, ?, ?, ?)").bind("Selvi Garden", "9876501234", "Anaimalai", "Canal street"),
-      db.prepare("INSERT INTO vendors (name, phone, market, address) VALUES (?, ?, ?, ?)").bind("Coimbatore Market", "9988776655", "Coimbatore", "Wholesale lane"),
-      db.prepare("INSERT INTO vendors (name, phone, market, address) VALUES (?, ?, ?, ?)").bind("Town Fruit Traders", "8877665544", "Tiruppur", "Market road")
-    ]);
-  }
-
+  // Seed the common banana varieties as a starting point for the "Banana
+  // types" master list -- these are generic produce categories, not
+  // customer records, so it's safe to pre-populate them. Deliberately NOT
+  // seeding demo farmers/vendors/vehicles/rates: a fresh production
+  // database should start with zero fake business data for the merchant
+  // to run into.
   const bananaTypeCount = await db.prepare("SELECT COUNT(*) AS count FROM banana_types").first<{ count: number }>();
   if (Number(bananaTypeCount?.count || 0) === 0) {
     await db.batch(BANANAS.map((banana) => db.prepare("INSERT INTO banana_types (name) VALUES (?)").bind(banana)));
-    const day = today();
-    await db.batch(BANANAS.map((banana, idx) => db.prepare("INSERT INTO banana_rates (rate_date, banana_type, grade, buy_rate, sell_rate) VALUES (?, ?, '1st grade', ?, ?)").bind(day, banana, [42, 28, 36, 58][idx], [49, 34, 43, 67][idx])));
-  }
-
-  const vehicleCount = await db.prepare("SELECT COUNT(*) AS count FROM vehicles").first<{ count: number }>();
-  if (Number(vehicleCount?.count || 0) === 0) {
-    await db.batch([
-      db.prepare("INSERT INTO vehicles (vehicle_no, driver_name, phone) VALUES (?, ?, ?)").bind("TN 38 AB 4421", "Driver 1", ""),
-      db.prepare("INSERT INTO vehicles (vehicle_no, driver_name, phone) VALUES (?, ?, ?)").bind("TN 39 CY 7188", "Driver 2", "")
-    ]);
   }
 }

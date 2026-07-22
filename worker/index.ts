@@ -33,7 +33,9 @@ import { periodReport, runScheduledReports, sendPeriodReport } from "./reports";
 import { ensureDb } from "./schema";
 import { getState } from "./state";
 import { appShell } from "./views/shell";
-import { bodyJson, html, json } from "./util";
+import { exportMaster, importMaster, mastersTemplate } from "./mastersImportExport";
+import { BUSINESS_SETTING_KEYS } from "./invoiceBranding";
+import { bodyJson, csv, html, json } from "./util";
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   try {
@@ -109,6 +111,22 @@ async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Res
     await createRate(db, input, by); return json({ ok: true });
   }
 
+  // Masters bulk import/export — owner + staff
+  if (url.pathname === "/api/masters/template") {
+    const type = url.searchParams.get("type") || "farmers";
+    return csv(mastersTemplate(type).join(",") + "\n", `${type}-template.csv`);
+  }
+  if (url.pathname === "/api/masters/export") {
+    const type = url.searchParams.get("type") || "farmers";
+    return csv(await exportMaster(db, type), `${type}.csv`);
+  }
+  if (url.pathname === "/api/masters/import") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    const type = String(input.type || "farmers");
+    const rows = Array.isArray(input.rows) ? (input.rows as Record<string, unknown>[]) : [];
+    return json({ count: await importMaster(db, type, rows, by) });
+  }
+
   // Purchase invoices — owner + staff
   if (url.pathname === "/api/purchase-invoices/create") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
@@ -179,7 +197,8 @@ async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Res
   }
   if (url.pathname === "/api/settings") {
     const denied = requireRole(user, ["owner"]); if (denied) return denied;
-    for (const key of ["daily_email_recipients", "weekly_email_recipients", "monthly_email_recipients", "whatsapp_numbers"]) {
+    const keys = ["daily_email_recipients", "weekly_email_recipients", "monthly_email_recipients", "whatsapp_numbers", ...BUSINESS_SETTING_KEYS];
+    for (const key of keys) {
       await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, input[key] || "").run();
     }
     return json({ ok: true });

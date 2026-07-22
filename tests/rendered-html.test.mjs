@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("banana merchant worker: simplified invoice-centric app", async () => {
-  const [page, layout, packageJson, index, shell, schema, auth, purchaseInvoices, saleInvoices, reports, whatsapp] = await Promise.all([
+  const [page, layout, packageJson, index, shell, schema, auth, purchaseInvoices, saleInvoices, reports, whatsapp, branding, mastersImportExport] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -15,6 +15,8 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
     readFile(new URL("../worker/saleInvoices.ts", import.meta.url), "utf8"),
     readFile(new URL("../worker/reports.ts", import.meta.url), "utf8"),
     readFile(new URL("../worker/whatsapp.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/invoiceBranding.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/mastersImportExport.ts", import.meta.url), "utf8"),
   ]);
 
   // The Next.js app router page is unreachable in production (the Worker's
@@ -45,6 +47,19 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(shell, /Add staff/);
   assert.match(shell, /Activity log/);
   assert.match(shell, /whatsapp_numbers/);
+
+  // Recent fixes/additions: sub-tabs for Masters and Invoices, View Invoice
+  // modal, live-updating sales invoice amount cells, the duplicate-invoice
+  // notice, business branding settings, and per-master CSV import/export.
+  assert.match(shell, /data-subtabs="masters"/);
+  assert.match(shell, /data-subtabs="invoices"/);
+  assert.match(shell, /viewInvoiceModal/);
+  assert.match(shell, /data-si-amount/);
+  assert.match(shell, /siExistingNotice/);
+  assert.match(shell, /already exist for this vehicle/);
+  assert.match(shell, /proprietor1_name/);
+  assert.match(shell, /data-import-type/);
+  assert.match(shell, /refreshSelectPreservingValue/);
 
   // Schema: new invoice-centric tables and grade-aware rates; legacy
   // tables are kept (not dropped) so old data stays reachable.
@@ -82,6 +97,21 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(whatsapp, /WHATSAPP_ACCESS_TOKEN/);
   assert.match(whatsapp, /is not configured/);
 
+  // Invoice branding: business/proprietor details editable via settings
+  // (defaulting to the merchant's real bill-book details), amount in
+  // words, and a signature block -- shared between purchase and sale
+  // invoice HTML rather than duplicated.
+  assert.match(branding, /getBusinessDetails/);
+  assert.match(branding, /amountInWords/);
+  assert.match(branding, /Prasanth K/);
+  assert.match(purchaseInvoices, /invoiceHeaderHtml/);
+  assert.match(saleInvoices, /invoiceHeaderHtml/);
+
+  // Masters bulk import/export is scoped to the 4 master types only.
+  assert.match(mastersImportExport, /banana-types/);
+  assert.match(mastersImportExport, /exportMaster/);
+  assert.match(mastersImportExport, /importMaster/);
+
   // The Worker entry wires auth, routing, and login gating together.
   assert.match(index, /\/api\/auth\/request/);
   assert.match(index, /\/api\/auth\/verify/);
@@ -90,4 +120,5 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(index, /\/api\/purchase-invoices\/create/);
   assert.match(index, /\/api\/sale-invoices\/vehicle-load/);
   assert.match(index, /\/api\/reports\/send/);
+  assert.match(index, /\/api\/masters\/import/);
 });

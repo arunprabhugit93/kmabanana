@@ -35,7 +35,7 @@ import { getState } from "./state";
 import { appShell } from "./views/shell";
 import { exportMaster, importMaster, mastersTemplate } from "./mastersImportExport";
 import { BUSINESS_SETTING_KEYS } from "./invoiceBranding";
-import { createFarmerAdvance, createVendorAdvance, deleteFarmerAdvance, deleteVendorAdvance, farmerPortfolio, vendorPortfolio } from "./advances";
+import { createFarmerAdvance, createVendorAdvance, deleteFarmerAdvance, deleteVendorAdvance, farmerPortfolio, makeFarmerPayment, receiveVendorPayment, vendorPortfolio } from "./advances";
 import { dashboardSummary } from "./dashboard";
 import { bodyJson, csv, html, json } from "./util";
 
@@ -151,6 +151,14 @@ async function handleApiRoute(request: Request, env: Env, url: URL): Promise<Res
   if (url.pathname === "/api/vendor-advances/delete") {
     const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
     await deleteVendorAdvance(db, Number(input.id), by); return json({ ok: true });
+  }
+  if (url.pathname === "/api/farmer-portfolio/pay") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    return json(await makeFarmerPayment(db, Number(input.farmer_id), input, by));
+  }
+  if (url.pathname === "/api/vendor-portfolio/receive") {
+    const denied = requireRole(user, ["owner", "staff"]); if (denied) return denied;
+    return json(await receiveVendorPayment(db, Number(input.vendor_id), input, by));
   }
   if (url.pathname === "/api/dashboard-summary") {
     return json(await dashboardSummary(db));

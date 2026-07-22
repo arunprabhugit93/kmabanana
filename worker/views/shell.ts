@@ -244,6 +244,11 @@ $("siSave").onclick = () => guarded(async () => {
 });
 
 // --- Invoices list -------------------------------------------------------
+function paymentSummary(out) {
+  let msg = "Applied " + rs(out.appliedToInvoices) + " to invoices";
+  if (out.creditBalance > 0) msg += ", " + rs(out.creditBalance) + " banked as advance credit";
+  return msg;
+}
 function updatePaidModal(kind, invoice, onBack) {
   openModal("Update paid - " + invoice.invoice_no, '<form id="mForm" class="sectiongap">' + fld("Paid amount", '<input name="paid" type="number" min="0" step="0.01" value="' + invoice.paid + '" required>') + '<button>Save</button></form>');
   $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/" + (kind === "purchase" ? "purchase-invoices" : "sale-invoices") + "/paid", Object.assign({ id: invoice.id }, formData(e.target))); showToast("Updated"); await load(); if (onBack) await onBack(); else closeModal(); }); };
@@ -274,6 +279,11 @@ async function viewFarmerPortfolio(id) {
     + '<article class="metric"><span>Invoices</span><strong>' + p.invoiceCount + '</strong></article>'
     + '<article class="metric"><span>Total kg purchased</span><strong>' + kg(p.totalKg) + '</strong></article>'
     + '</div>';
+  body += '<h3 style="margin:14px 0 6px">Make a payment</h3><p class="subcopy">Settles the oldest open invoices for this farmer first; any amount left over is banked as an advance credit.</p><form id="payForm" class="formgrid four">'
+    + '<input name="payment_date" type="date" value="' + todayStr + '" required>'
+    + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
+    + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
+    + '<button>Pay farmer</button></form>';
   body += '<h3 style="margin:14px 0 6px">Record an advance</h3><form id="advForm" class="formgrid four">'
     + '<input name="advance_date" type="date" value="' + todayStr + '" required>'
     + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
@@ -282,6 +292,7 @@ async function viewFarmerPortfolio(id) {
   body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
   body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<div class="actions"><button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button> <button type="button" class="secondary small" data-pay-tx="' + inv.id + '">Payment</button></div>')]));
   openModal("Farmer portfolio - " + f.name, body);
+  $("payForm").onsubmit = e => { e.preventDefault(); guarded(async () => { const out = await api("/api/farmer-portfolio/pay", Object.assign({ farmer_id: id }, formData(e.target))); showToast(paymentSummary(out)); await viewFarmerPortfolio(id); await load(); }); };
   $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmer-advances", Object.assign({ farmer_id: id }, formData(e.target))); showToast("Advance recorded"); await viewFarmerPortfolio(id); await load(); }); };
   $("modalBody").onclick = e => {
     if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/farmer-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewFarmerPortfolio(id); await load(); });
@@ -301,6 +312,11 @@ async function viewVendorPortfolio(id) {
     + '<article class="metric"><span>Invoices</span><strong>' + p.invoiceCount + '</strong></article>'
     + '<article class="metric"><span>Total kg sold</span><strong>' + kg(p.totalKg) + '</strong></article>'
     + '</div>';
+  body += '<h3 style="margin:14px 0 6px">Receive a payment</h3><p class="subcopy">Settles the oldest open invoices for this buyer first; any amount left over is banked as an advance credit.</p><form id="payForm" class="formgrid four">'
+    + '<input name="payment_date" type="date" value="' + todayStr + '" required>'
+    + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
+    + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
+    + '<button>Receive from buyer</button></form>';
   body += '<h3 style="margin:14px 0 6px">Record an advance received</h3><form id="advForm" class="formgrid four">'
     + '<input name="advance_date" type="date" value="' + todayStr + '" required>'
     + '<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required>'
@@ -309,6 +325,7 @@ async function viewVendorPortfolio(id) {
   body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
   body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Vehicle", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, inv.vehicle_no, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<div class="actions"><button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button> <button type="button" class="secondary small" data-pay-tx="' + inv.id + '">Payment</button></div>')]));
   openModal("Buyer portfolio - " + v.name, body);
+  $("payForm").onsubmit = e => { e.preventDefault(); guarded(async () => { const out = await api("/api/vendor-portfolio/receive", Object.assign({ vendor_id: id }, formData(e.target))); showToast(paymentSummary(out)); await viewVendorPortfolio(id); await load(); }); };
   $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/vendor-advances", Object.assign({ vendor_id: id }, formData(e.target))); showToast("Advance recorded"); await viewVendorPortfolio(id); await load(); }); };
   $("modalBody").onclick = e => {
     if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/vendor-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewVendorPortfolio(id); await load(); });

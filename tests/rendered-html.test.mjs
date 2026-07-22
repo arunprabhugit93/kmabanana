@@ -162,6 +162,21 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(dashboard, /outstandingPayable/);
   assert.match(dashboard, /outstandingReceivable/);
 
+  // Portfolio-level "make/receive a payment": a lump sum applied to the
+  // farmer's/vendor's oldest open invoices first, with any leftover
+  // banked as an advance credit rather than lost.
+  assert.match(advances, /function makeFarmerPayment/);
+  assert.match(advances, /function receiveVendorPayment/);
+  assert.match(advances, /status = 'open'/);
+  assert.match(advances, /creditBalance/);
+  assert.match(shell, /Make a payment/);
+  assert.match(shell, /Receive a payment/);
+  assert.match(shell, /farmer-portfolio\/pay/);
+  assert.match(shell, /vendor-portfolio\/receive/);
+  assert.match(shell, /function paymentSummary/);
+  assert.match(index, /\/api\/farmer-portfolio\/pay/);
+  assert.match(index, /\/api\/vendor-portfolio\/receive/);
+
   // Farmer/vendor master lists show pending balances net of advances.
   assert.match(masters, /farmer_payments/);
   assert.match(masters, /vendor_advances/);

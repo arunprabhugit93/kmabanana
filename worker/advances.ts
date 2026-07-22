@@ -27,6 +27,71 @@ export async function deleteVendorAdvance(db: D1Database, id: number, changedBy:
   await writeAudit(db, "vendor_advance", id, "delete", changedBy, before, null);
 }
 
+// A lump-sum payment against a farmer's/vendor's outstanding invoices,
+// applied oldest-invoice-first. Any amount left over after every open
+// invoice is settled is banked as an advance credit for future invoices.
+export async function makeFarmerPayment(db: D1Database, farmerId: number, input: Record<string, unknown>, changedBy: string) {
+  let remaining = Number(input.amount);
+  const paymentDate = String(input.payment_date || "");
+  const mode = String(input.mode || "cash");
+  const notes = String(input.notes || "");
+  const openInvoices = await all(
+    db,
+    "SELECT * FROM purchase_invoices WHERE farmer_id = ? AND status = 'open' AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date ASC, id ASC",
+    farmerId
+  ) as PurchaseInvoiceRow[];
+
+  let appliedToInvoices = 0;
+  for (const inv of openInvoices) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remaining, inv.pending);
+    if (applied <= 0) continue;
+    const paid = inv.paid + applied;
+    const pending = inv.total - paid;
+    await db.prepare("UPDATE purchase_invoices SET paid = ?, pending = ?, status = ? WHERE id = ?").bind(paid, pending, pending > 0 ? "open" : "paid", inv.id).run();
+    await writeAudit(db, "purchase_invoice", inv.id, "update", changedBy, inv, { paid, pending, note: "Settled via portfolio payment" });
+    remaining -= applied;
+    appliedToInvoices += applied;
+  }
+
+  if (remaining > 0) {
+    await createFarmerAdvance(db, { advance_date: paymentDate, farmer_id: farmerId, amount: remaining, mode, notes: notes ? `${notes} (credit balance)` : "Credit balance after settling invoices" }, changedBy);
+  }
+
+  return { appliedToInvoices, creditBalance: Math.max(0, remaining) };
+}
+
+export async function receiveVendorPayment(db: D1Database, vendorId: number, input: Record<string, unknown>, changedBy: string) {
+  let remaining = Number(input.amount);
+  const paymentDate = String(input.payment_date || "");
+  const mode = String(input.mode || "cash");
+  const notes = String(input.notes || "");
+  const openInvoices = await all(
+    db,
+    "SELECT * FROM sale_invoices WHERE vendor_id = ? AND status = 'open' AND (deleted_at = '' OR deleted_at IS NULL) ORDER BY invoice_date ASC, id ASC",
+    vendorId
+  ) as SaleInvoiceRow[];
+
+  let appliedToInvoices = 0;
+  for (const inv of openInvoices) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remaining, inv.pending);
+    if (applied <= 0) continue;
+    const paid = inv.paid + applied;
+    const pending = inv.total - paid;
+    await db.prepare("UPDATE sale_invoices SET paid = ?, pending = ?, status = ? WHERE id = ?").bind(paid, pending, pending > 0 ? "open" : "paid", inv.id).run();
+    await writeAudit(db, "sale_invoice", inv.id, "update", changedBy, inv, { paid, pending, note: "Settled via portfolio payment" });
+    remaining -= applied;
+    appliedToInvoices += applied;
+  }
+
+  if (remaining > 0) {
+    await createVendorAdvance(db, { advance_date: paymentDate, vendor_id: vendorId, amount: remaining, mode, notes: notes ? `${notes} (credit balance)` : "Credit balance after settling invoices" }, changedBy);
+  }
+
+  return { appliedToInvoices, creditBalance: Math.max(0, remaining) };
+}
+
 export async function farmerPortfolio(db: D1Database, farmerId: number) {
   const farmer = await db.prepare("SELECT * FROM farmers WHERE id = ?").bind(farmerId).first<FarmerRow>();
   const invoices = await all(

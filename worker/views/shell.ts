@@ -244,9 +244,9 @@ $("siSave").onclick = () => guarded(async () => {
 });
 
 // --- Invoices list -------------------------------------------------------
-function updatePaidModal(kind, invoice) {
+function updatePaidModal(kind, invoice, onBack) {
   openModal("Update paid - " + invoice.invoice_no, '<form id="mForm" class="sectiongap">' + fld("Paid amount", '<input name="paid" type="number" min="0" step="0.01" value="' + invoice.paid + '" required>') + '<button>Save</button></form>');
-  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/" + (kind === "purchase" ? "purchase-invoices" : "sale-invoices") + "/paid", Object.assign({ id: invoice.id }, formData(e.target))); closeModal(); showToast("Updated"); await load(); }); };
+  $("mForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/" + (kind === "purchase" ? "purchase-invoices" : "sale-invoices") + "/paid", Object.assign({ id: invoice.id }, formData(e.target))); showToast("Updated"); await load(); if (onBack) await onBack(); else closeModal(); }); };
 }
 async function viewInvoiceModal(kind, id, onBack) {
   const base = kind === "purchase" ? "purchase-invoices" : "sale-invoices";
@@ -280,12 +280,13 @@ async function viewFarmerPortfolio(id) {
     + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
     + '<button>Save advance</button></form>';
   body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
-  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button>')]));
+  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<div class="actions"><button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button> <button type="button" class="secondary small" data-pay-tx="' + inv.id + '">Payment</button></div>')]));
   openModal("Farmer portfolio - " + f.name, body);
   $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/farmer-advances", Object.assign({ farmer_id: id }, formData(e.target))); showToast("Advance recorded"); await viewFarmerPortfolio(id); await load(); }); };
   $("modalBody").onclick = e => {
     if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/farmer-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewFarmerPortfolio(id); await load(); });
     if (e.target.dataset.viewTx) guarded(() => viewInvoiceModal("purchase", Number(e.target.dataset.viewTx), () => viewFarmerPortfolio(id)));
+    if (e.target.dataset.payTx) guarded(() => updatePaidModal("purchase", p.invoices.find(x => x.id === Number(e.target.dataset.payTx)), () => viewFarmerPortfolio(id)));
   };
 }
 
@@ -306,12 +307,13 @@ async function viewVendorPortfolio(id) {
     + '<select name="mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option><option value="other">Other</option></select>'
     + '<button>Save advance</button></form>';
   body += '<h3 style="margin:14px 0 6px">Advances</h3>' + table(["Date", "Amount", "Mode", "Notes", "Action"], p.advances.map(a => [a.advance_date, rs(a.amount), a.mode, a.notes, raw('<button type="button" class="danger small" data-del-adv="' + a.id + '">Delete</button>')]));
-  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Vehicle", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, inv.vehicle_no, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button>')]));
+  body += '<h3 style="margin:14px 0 6px">Transactions</h3>' + table(["No", "Date", "Vehicle", "Total", "Paid", "Pending", "Status", "Action"], p.invoices.map(inv => [inv.invoice_no, inv.invoice_date, inv.vehicle_no, rs(inv.total), rs(inv.paid), rs(inv.pending), raw(pillFor(inv.status)), raw('<div class="actions"><button type="button" class="secondary small" data-view-tx="' + inv.id + '">View</button> <button type="button" class="secondary small" data-pay-tx="' + inv.id + '">Payment</button></div>')]));
   openModal("Buyer portfolio - " + v.name, body);
   $("advForm").onsubmit = e => { e.preventDefault(); guarded(async () => { await api("/api/vendor-advances", Object.assign({ vendor_id: id }, formData(e.target))); showToast("Advance recorded"); await viewVendorPortfolio(id); await load(); }); };
   $("modalBody").onclick = e => {
     if (e.target.dataset.delAdv && confirm("Delete this advance?")) guarded(async () => { await api("/api/vendor-advances/delete", { id: Number(e.target.dataset.delAdv) }); showToast("Deleted"); await viewVendorPortfolio(id); await load(); });
     if (e.target.dataset.viewTx) guarded(() => viewInvoiceModal("sale", Number(e.target.dataset.viewTx), () => viewVendorPortfolio(id)));
+    if (e.target.dataset.payTx) guarded(() => updatePaidModal("sale", p.invoices.find(x => x.id === Number(e.target.dataset.payTx)), () => viewVendorPortfolio(id)));
   };
 }
 function invoiceActions(kind, x) {
@@ -623,7 +625,7 @@ const BODY = `
           <form class="formgrid" id="purchaseHeaderForm">
             <select name="farmer_id" required></select>
             <input name="invoice_date" type="date" required>
-            <input name="paid" type="number" min="0" step="0.01" placeholder="Amount paid now">
+            <select name="payment_made"><option value="no">Payment made? No</option><option value="yes">Payment made? Yes</option></select>
           </form>
           <div class="formgrid" style="margin-top:10px">
             <select id="piBanana"></select>
@@ -653,7 +655,7 @@ const BODY = `
             <select name="vendor_id" required></select>
             <select name="vehicle_no" required></select>
             <input name="invoice_date" type="date" required>
-            <input name="paid" type="number" min="0" step="0.01" placeholder="Amount paid now">
+            <select name="payment_made"><option value="no">Payment made? No</option><option value="yes">Payment made? Yes</option></select>
             <button type="button" id="siLoadVehicle">Load vehicle's purchases</button>
           </form>
           <div id="siExistingNotice"></div>

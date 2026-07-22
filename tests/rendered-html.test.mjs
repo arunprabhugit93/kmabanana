@@ -137,6 +137,21 @@ test("banana merchant worker: simplified invoice-centric app", async () => {
   assert.match(shell, /Back to portfolio/);
   assert.match(shell, /Record an advance/);
 
+  // Invoice creation asks a plain yes/no "was payment made" question
+  // instead of a free-amount field; yes marks the invoice fully paid.
+  assert.match(shell, /name="payment_made"/);
+  assert.match(shell, /Payment made\? No/);
+  assert.match(shell, /Payment made\? Yes/);
+  assert.doesNotMatch(shell, /name="paid" type="number" min="0" step="0.01" placeholder="Amount paid now"/);
+  assert.match(purchaseInvoices, /payment_made/);
+  assert.match(saleInvoices, /payment_made/);
+
+  // Portfolio transactions can also record a payment update in place,
+  // mirroring the advance-recording flow (returns to a refreshed
+  // portfolio instead of just closing the modal).
+  assert.match(shell, /data-pay-tx/);
+  assert.match(shell, /function updatePaidModal\(kind, invoice, onBack\)/);
+
   // Advances backend: farmer advances reuse the pre-existing farmer_payments
   // table, vendor advances get a new table; both feed portfolio aggregation.
   assert.match(advances, /farmerPortfolio/);

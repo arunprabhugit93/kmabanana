@@ -42,7 +42,7 @@ export async function createPurchaseInvoice(db: D1Database, input: Record<string
     return { ...item, netWeightKg, amount };
   });
   const total = computed.reduce((sum, item) => sum + item.amount, 0);
-  const paid = Number(input.paid || 0);
+  const paid = String(input.payment_made) === "yes" ? total : 0;
   const pending = total - paid;
 
   const invoiceNo = `PINV-${Date.now()}`;

@@ -71,7 +71,7 @@ export async function createSaleInvoice(db: D1Database, input: Record<string, un
 
   const computed = items.map((item) => ({ ...item, amount: Number(item.net_weight_kg) * Number(item.rate) }));
   const total = computed.reduce((sum, item) => sum + item.amount, 0);
-  const paid = Number(input.paid || 0);
+  const paid = String(input.payment_made) === "yes" ? total : 0;
   const pending = total - paid;
 
   const invoiceNo = `SINV-${Date.now()}`;
